@@ -1,0 +1,56 @@
+# Fairway Live — full stack (app + PostgreSQL)
+#
+# Start everything:
+#   docker compose up -d --build
+#
+# App:  http://localhost:3000
+# Stop: docker compose down
+# Wipe DB volume: docker compose down -v
+#
+# GOLF_COURSE_API_KEY is read from the project .env file automatically.
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: fairway-live-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: fairway_live
+    volumes:
+      - fairway_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d fairway_live"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "5432:5432"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fairway-live-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    # Load GOLF_COURSE_API_KEY (and any other vars) from project .env
+    env_file:
+      - .env
+    environment:
+      # Inside Docker the DB host is the service name "db", not localhost
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/fairway_live?schema=public
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      # Explicitly pass through the same key from .env (Compose substitution)
+      GOLF_COURSE_API_KEY: ${GOLF_COURSE_API_KEY}
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  fairway_pg_data:

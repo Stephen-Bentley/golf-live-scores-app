@@ -1,0 +1,716 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b3d2e" />
+    <title>Fairway Live</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section id="auth-view" class="view" aria-labelledby="auth-title">
+        <div class="brand-mark" aria-hidden="true">⛳</div>
+        <p class="eyebrow">Fairway Live</p>
+        <h1 id="auth-title">Keep every score in view.</h1>
+        <p class="lede">
+          Set up a round, invite your group, and follow the leaderboard from any
+          phone.
+        </p>
+
+        <div class="auth-options">
+          <button
+            id="show-host-auth"
+            class="button button-primary"
+            type="button"
+          >
+            Host Sign In
+          </button>
+          <button
+            id="show-join-auth"
+            class="button button-secondary"
+            type="button"
+          >
+            Join a Round
+          </button>
+        </div>
+
+        <form id="magic-link-form" class="card form-card" novalidate hidden>
+          <div class="form-header">
+            <button type="button" id="back-to-auth" class="button button-quiet">
+              ← Back
+            </button>
+            <h2>Host sign in</h2>
+            <p class="muted">We’ll send a secure sign-in link to your email.</p>
+          </div>
+          <label for="email">Email address</label>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            autocomplete="email"
+            placeholder="you@example.com"
+            required
+          />
+          <p id="email-error" class="field-error" role="alert" hidden>
+            Enter a valid email address.
+          </p>
+          <button class="button button-primary" type="submit">
+            Send magic link
+          </button>
+        </form>
+
+        <form id="join-round-form" class="card form-card" novalidate hidden>
+          <div class="form-header">
+            <button
+              type="button"
+              id="back-to-auth-join"
+              class="button button-quiet"
+            >
+              ← Back
+            </button>
+            <h2>Join a Round</h2>
+            <p class="muted">Enter the join code provided by your host.</p>
+          </div>
+          <label for="join-code-input">Join Code</label>
+          <input
+            id="join-code-input"
+            name="joinCode"
+            type="text"
+            placeholder="ABCDEF"
+            required
+          />
+          <p id="join-code-error" class="field-error" role="alert" hidden>
+            Invalid join code.
+          </p>
+
+          <label for="player-name">Display Name</label>
+          <input
+            id="player-name"
+            name="displayName"
+            type="text"
+            placeholder="Your Name"
+            required
+          />
+
+          <label for="player-handicap">Playing Handicap</label>
+          <input
+            id="player-handicap"
+            name="playingHandicap"
+            type="number"
+            min="0"
+            max="54"
+            value="0"
+            required
+          />
+
+          <button class="button button-primary" type="submit">
+            Join Round
+          </button>
+        </form>
+
+        <section
+          id="magic-link-sent"
+          class="card success-card"
+          aria-live="polite"
+          hidden
+        >
+          <span class="success-icon" aria-hidden="true">✓</span>
+          <div>
+            <h2>Check your inbox</h2>
+            <p class="muted">
+              A sign-in link is ready for <strong id="sent-email"></strong>.
+            </p>
+          </div>
+          <button
+            id="open-demo-link"
+            class="button button-secondary"
+            type="button"
+          >
+            Open demo magic link
+          </button>
+        </section>
+      </section>
+
+      <section
+        id="dashboard-view"
+        class="view"
+        aria-labelledby="dashboard-title"
+        hidden
+      >
+        <header class="topbar">
+          <a class="brand" href="#dashboard" aria-label="Fairway Live home"
+            ><span aria-hidden="true">⛳</span> Fairway Live</a
+          >
+          <button id="sign-out" class="button button-quiet" type="button">
+            Sign out
+          </button>
+        </header>
+
+        <div class="dashboard-content">
+          <div class="dashboard-heading">
+            <div>
+              <p class="eyebrow">Host dashboard</p>
+              <h1 id="dashboard-title">Good to see you.</h1>
+              <p class="lede">
+                Your live rounds will appear here once you create one.
+              </p>
+            </div>
+            <button
+              id="create-round-button"
+              class="button button-primary"
+              type="button"
+              disabled
+            >
+              Create a round
+            </button>
+          </div>
+
+          <section class="empty-state card" aria-label="No rounds yet">
+            <div class="empty-illustration" aria-hidden="true">⛳</div>
+            <h2>Your first round starts here</h2>
+            <p class="muted">
+              Choose a course and tees, then share a join code with your
+              players.
+            </p>
+            <p class="status-pill">
+              <span class="status-dot"></span> Ready for round setup
+            </p>
+          </section>
+
+          <section
+            id="rounds-section"
+            class="rounds-section"
+            aria-labelledby="rounds-title"
+          >
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Live rounds</p>
+                <h2 id="rounds-title">Your rounds</h2>
+                <p class="muted">
+                  Create a round after adding a course and tee set.
+                </p>
+              </div>
+              <span id="round-count" class="status-pill">0 rounds</span>
+            </div>
+            <div id="round-list" class="round-list" aria-live="polite"></div>
+          </section>
+
+          <section
+            id="round-setup"
+            class="card round-setup"
+            aria-labelledby="round-setup-title"
+            hidden
+          >
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Round setup</p>
+                <h2 id="round-setup-title">Choose the course and tees</h2>
+                <p class="muted">
+                  This selection will be frozen into the round when it is
+                  created.
+                </p>
+              </div>
+              <button
+                id="cancel-round-setup"
+                class="button button-quiet"
+                type="button"
+              >
+                Cancel
+              </button>
+            </div>
+            <form id="round-form" class="round-form" novalidate>
+              <div class="field-grid">
+                <div class="field-group">
+                  <label for="round-course">Course</label>
+                  <select id="round-course" name="courseId" required></select>
+                </div>
+                <div class="field-group">
+                  <label for="round-tee">Tee set</label>
+                  <select id="round-tee" name="teeId" required></select>
+                </div>
+              </div>
+              <div class="round-preview-heading">
+                <div>
+                  <h3>18-hole preview</h3>
+                  <p id="round-preview-summary" class="muted">
+                    Select a course and tee set.
+                  </p>
+                </div>
+                <span class="table-note">Snapshot preview</span>
+              </div>
+              <div id="round-hole-preview" class="round-hole-preview"></div>
+              <p
+                id="round-form-error"
+                class="field-error"
+                role="alert"
+                hidden
+              ></p>
+              <button class="button button-primary" type="submit">
+                Create live round
+              </button>
+            </form>
+          </section>
+
+          <section class="catalog-layout" aria-labelledby="catalog-title">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Course catalog</p>
+                <h2 id="catalog-title">Courses and tees</h2>
+                <p class="muted">
+                  Add the hole data your rounds will use. Every tee set needs 18
+                  valid holes.
+                </p>
+              </div>
+              <span id="catalog-count" class="status-pill">0 tee sets</span>
+            </div>
+
+            <form id="golf-api-search" class="card api-card" novalidate>
+              <div>
+                <p class="eyebrow">External course data</p>
+                <h2>Find a course from GolfCourseAPI</h2>
+                <p class="muted">
+                  Search the connected course catalog, then import an 18-hole
+                  course and its tee sets.
+                </p>
+              </div>
+              <div class="api-search-fields">
+                <div class="field-group">
+                  <label for="api-course-name">Course name</label
+                  ><input
+                    id="api-course-name"
+                    name="name"
+                    type="search"
+                    placeholder="Pebble Beach"
+                  />
+                </div>
+                <div class="field-group">
+                  <label for="api-city">City</label
+                  ><input
+                    id="api-city"
+                    name="city"
+                    type="search"
+                    placeholder="Cape Town"
+                  />
+                </div>
+                <div class="field-group">
+                  <label for="api-country">Country</label
+                  ><input
+                    id="api-country"
+                    name="country"
+                    type="search"
+                    placeholder="South Africa"
+                  />
+                </div>
+              </div>
+              <div class="api-actions">
+                <button class="button button-secondary" type="submit">
+                  Search GolfCourseAPI</button
+                ><span
+                  id="api-search-status"
+                  class="table-note"
+                  role="status"
+                ></span>
+              </div>
+              <div
+                id="api-search-results"
+                class="api-results"
+                aria-live="polite"
+              ></div>
+            </form>
+
+            <div class="catalog-grid">
+              <form
+                id="course-form"
+                class="card form-card catalog-form"
+                novalidate
+              >
+                <div>
+                  <h2>Add a course</h2>
+                  <p class="muted">Create a course and its first tee set.</p>
+                </div>
+                <div class="field-grid">
+                  <div class="field-group">
+                    <label for="course-name">Course name</label>
+                    <input
+                      id="course-name"
+                      name="courseName"
+                      type="text"
+                      placeholder="Green Valley Golf Club"
+                      required
+                    />
+                  </div>
+                  <div class="field-group">
+                    <label for="course-location">Location</label>
+                    <input
+                      id="course-location"
+                      name="location"
+                      type="text"
+                      placeholder="Cape Town, South Africa"
+                      required
+                    />
+                  </div>
+                  <div class="field-group">
+                    <label for="tee-name">Tee set name</label>
+                    <input
+                      id="tee-name"
+                      name="teeName"
+                      type="text"
+                      placeholder="Club tees"
+                      required
+                    />
+                  </div>
+                  <div class="field-group">
+                    <label for="tee-colour">Tee colour</label>
+                    <select id="tee-colour" name="teeColour">
+                      <option>White</option>
+                      <option>Yellow</option>
+                      <option>Blue</option>
+                      <option>Red</option>
+                      <option>Black</option>
+                    </select>
+                  </div>
+                  <div class="field-group">
+                    <label for="tee-rating"
+                      >Course rating
+                      <span class="optional">optional</span></label
+                    >
+                    <input
+                      id="tee-rating"
+                      name="rating"
+                      type="number"
+                      min="0"
+                      max="150"
+                      step="0.1"
+                      placeholder="72.4"
+                    />
+                  </div>
+                  <div class="field-group">
+                    <label for="tee-slope"
+                      >Slope rating
+                      <span class="optional">optional</span></label
+                    >
+                    <input
+                      id="tee-slope"
+                      name="slope"
+                      type="number"
+                      min="0"
+                      max="200"
+                      step="1"
+                      placeholder="128"
+                    />
+                  </div>
+                </div>
+
+                <div class="hole-heading">
+                  <div>
+                    <h3>18-hole setup</h3>
+                    <p class="muted">Enter each hole’s par and stroke index.</p>
+                  </div>
+                  <span class="table-note">All fields required</span>
+                </div>
+                <div class="hole-table-wrap">
+                  <table class="hole-table">
+                    <caption class="sr-only">
+                      Par and stroke index for holes 1 through 18
+                    </caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Hole</th>
+                        <th scope="col">Par</th>
+                        <th scope="col">Stroke index</th>
+                        <th scope="col">
+                          Distance <span class="optional">optional</span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody id="hole-rows"></tbody>
+                  </table>
+                </div>
+                <p
+                  id="course-form-error"
+                  class="field-error"
+                  role="alert"
+                  hidden
+                ></p>
+                <p
+                  id="course-form-success"
+                  class="form-success"
+                  role="status"
+                  hidden
+                >
+                  Course and tee set saved.
+                </p>
+                <button
+                  id="course-submit"
+                  class="button button-primary"
+                  type="submit"
+                >
+                  Save course and tee set
+                </button>
+              </form>
+
+              <div
+                id="catalog-list"
+                class="catalog-list"
+                aria-live="polite"
+              ></div>
+            </div>
+          </section>
+
+          <section class="quick-facts" aria-label="Application features">
+            <article class="fact-card">
+              <span class="fact-icon" aria-hidden="true">↗</span>
+              <h2>Live updates</h2>
+              <p>See scores move as your group plays.</p>
+            </article>
+            <article class="fact-card">
+              <span class="fact-icon" aria-hidden="true">◷</span>
+              <h2>Mobile first</h2>
+              <p>Quick score entry from the fairway.</p>
+            </article>
+            <article class="fact-card">
+              <span class="fact-icon" aria-hidden="true">▦</span>
+              <h2>Export ready</h2>
+              <p>Take the finished round with you.</p>
+            </article>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <section
+      id="player-dashboard-view"
+      class="view"
+      aria-labelledby="player-dashboard-title"
+      hidden
+    >
+      <header class="topbar">
+        <a class="brand" href="#player-dashboard" aria-label="Fairway Live home"
+          ><span aria-hidden="true">⛳</span> Fairway Live</a
+        >
+        <button id="sign-out-player" class="button button-quiet" type="button">
+          Sign out
+        </button>
+      </header>
+      <div class="dashboard-content">
+        <div class="dashboard-heading">
+          <div>
+            <p class="eyebrow">Player dashboard</p>
+            <h1 id="player-dashboard-title">Join the action.</h1>
+          </div>
+        </div>
+        <section
+          id="active-round-info"
+          class="card"
+          aria-labelledby="active-round-title"
+        >
+          <h2 id="active-round-title" class="muted">No active round</h2>
+          <p id="player-round-details" class="lede">
+            Join a round to see your progress.
+          </p>
+        </section>
+      </div>
+    </section>
+
+      <!-- Score Entry View -->
+      <section id="score-entry-view" class="view" aria-labelledby="score-entry-title" hidden>
+        <header class="topbar">
+          <a class="brand" href="#player-dashboard" aria-label="Fairway Live home"><span aria-hidden="true">⛳</span> Fairway Live</a>
+          <button id="back-to-leaderboard" class="button button-quiet" type="button">Leaderboard</button>
+        </header>
+        <div id="offline-banner" class="offline-banner" hidden role="status">
+          You’re offline. Scores will save as drafts and sync when you’re back online.
+        </div>
+        <div class="score-entry-layout">
+          <section id="score-card" class="card score-card" aria-labelledby="current-hole-title">
+            <div class="score-card-header">
+              <h2 id="current-hole-title">Hole 1</h2>
+              <span id="current-hole-status" class="status-pill">Ready to score</span>
+            </div>
+
+            <div class="hole-details">
+              <div class="detail-row">
+                <span class="detail-label">Par:</span>
+                <strong id="hole-par">4</strong>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Stroke Index:</span>
+                <strong id="hole-stroke-index">1</strong>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Handicap Strokes:</span>
+                <strong id="hole-handicap-strokes">0</strong>
+              </div>
+            </div>
+
+            <div class="score-input-area">
+              <label for="score-input" class="sr-only">Your score for this hole</label>
+              <div class="score-stepper">
+                <button type="button" id="score-minus" class="stepper-btn" aria-label="Decrease score">−</button>
+                <input
+                  id="score-input"
+                  type="number"
+                  inputmode="numeric"
+                  min="1"
+                  max="20"
+                  step="1"
+                  value=""
+                  placeholder="—"
+                  aria-describedby="score-hint"
+                />
+                <button type="button" id="score-plus" class="stepper-btn" aria-label="Increase score">+</button>
+              </div>
+              <p id="score-hint" class="sr-only">Enter a whole number from 1 to 20 strokes.</p>
+            </div>
+
+            <div class="score-preview" hidden>
+              <div class="preview-row">
+                <span>Gross Score:</span>
+                <strong id="preview-gross">—</strong>
+              </div>
+              <div class="preview-row">
+                <span>Net Score:</span>
+                <strong id="preview-net">—</strong>
+              </div>
+              <div class="preview-row points-row">
+                <span>Stableford Points:</span>
+                <strong id="preview-points" class="points-value">—</strong>
+              </div>
+            </div>
+
+            <div class="score-nav">
+              <button id="prev-hole-btn" class="button button-secondary" type="button">← Prev</button>
+              <button id="save-score-btn" class="button button-primary" type="button" disabled>Save Score</button>
+              <button id="next-hole-btn" class="button button-secondary" type="button">Next →</button>
+            </div>
+
+            <p id="score-message" class="score-message" role="status" hidden></p>
+          </section>
+
+          <aside class="progress-sidebar card">
+            <h3>Hole Progress</h3>
+            <div id="hole-progress-list" class="hole-progress-list" aria-label="Holes 1 through 18"></div>
+
+            <div class="player-summary-section">
+              <h4>Your Progress</h4>
+              <div class="summary-row">
+                <span>Holes Completed:</span>
+                <strong id="holes-completed">0 / 18</strong>
+              </div>
+              <div class="summary-row points-summary">
+                <span>Total Points:</span>
+                <strong id="total-points">0</strong>
+              </div>
+              <p id="completion-status" class="muted">In progress</p>
+            </div>
+
+            <button id="exit-score-entry" class="button button-quiet" type="button">Exit Score Entry</button>
+          </aside>
+        </div>
+      </section>
+
+      <!-- Conflict confirmation dialog -->
+      <div id="conflict-dialog" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="conflict-title">
+        <div class="modal-card">
+          <h2 id="conflict-title">Score conflict</h2>
+          <p class="muted">Another device updated this hole. Choose which value to keep.</p>
+          <div class="conflict-values">
+            <div>
+              <span class="detail-label">Your value</span>
+              <strong id="conflict-local">—</strong>
+            </div>
+            <div>
+              <span class="detail-label">Saved value</span>
+              <strong id="conflict-server">—</strong>
+            </div>
+          </div>
+          <div class="score-actions">
+            <button type="button" id="conflict-keep-local" class="button button-primary">Keep mine</button>
+            <button type="button" id="conflict-keep-server" class="button button-secondary">Use saved</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Leaderboard View -->
+      <section id="leaderboard-view" class="view" aria-labelledby="leaderboard-title" hidden>
+        <header class="topbar">
+          <a class="brand" href="#dashboard" aria-label="Fairway Live home"><span aria-hidden="true">⛳</span> Fairway Live</a>
+          <button id="back-to-rounds" class="button button-quiet" type="button">My Rounds</button>
+        </header>
+        <div class="leaderboard-layout">
+          <section class="leaderboard-card" aria-labelledby="leaderboard-title">
+            <div class="leaderboard-header">
+              <h2 id="leaderboard-title">Live Leaderboard</h2>
+              <span id="connection-status" class="status-pill">Local</span>
+            </div>
+
+            <div id="leaderboard-loading" class="loading-state" hidden>
+              <div class="spinner"></div>
+              <p>Loading leaderboard...</p>
+            </div>
+
+            <div class="table-scroll">
+              <table class="leaderboard-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Rank</th>
+                    <th scope="col">Player</th>
+                    <th scope="col">Hcp</th>
+                    <th scope="col">Holes</th>
+                    <th scope="col">Pts</th>
+                    <th scope="col">Updated</th>
+                  </tr>
+                </thead>
+                <tbody id="leaderboard-body" aria-live="polite"></tbody>
+              </table>
+            </div>
+
+            <div id="leaderboard-empty" class="empty-state" hidden>
+              <p>No scores yet. Players haven't started entering scores.</p>
+            </div>
+          </section>
+
+          <!-- Host management (Task 09 / 10) -->
+          <section id="host-round-panel" class="card host-panel" hidden>
+            <h3>Host controls</h3>
+            <p id="host-incomplete-warning" class="warning-banner" hidden></p>
+            <div class="host-status-row">
+              <span>Status:</span>
+              <strong id="host-round-status">setup</strong>
+            </div>
+            <div class="host-actions">
+              <button type="button" id="host-mark-active" class="button button-secondary">Mark active</button>
+              <button type="button" id="host-ready-export" class="button button-secondary">Ready for export</button>
+              <button type="button" id="host-close-round" class="button button-secondary">Close round</button>
+              <button type="button" id="host-reopen-round" class="button button-secondary">Reopen</button>
+              <button type="button" id="host-revoke-code" class="button button-quiet">Revoke join code</button>
+              <button type="button" id="host-export-xlsx" class="button button-primary">Download Excel</button>
+            </div>
+            <div id="host-correct-panel" class="host-correct">
+              <h4>Correct a score</h4>
+              <div class="field-grid host-correct-grid">
+                <label>
+                  Player
+                  <select id="host-correct-player"></select>
+                </label>
+                <label>
+                  Hole
+                  <select id="host-correct-hole"></select>
+                </label>
+                <label>
+                  Gross score
+                  <input id="host-correct-score" type="number" min="1" max="20" step="1" />
+                </label>
+              </div>
+              <button type="button" id="host-correct-save" class="button button-primary">Save correction</button>
+              <p id="host-correct-msg" class="score-message" hidden></p>
+            </div>
+          </section>
+        </div>
+      </section>
+
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

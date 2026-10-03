@@ -1,0 +1,216 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoundStatus {
+  setup
+  active
+  ready_for_export
+  closed
+  archived
+}
+
+enum MemberRole {
+  host
+  player
+}
+
+enum ScoringFormat {
+  stableford
+  stroke
+  modified_stableford
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  displayName  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  hostedRounds Round[]  @relation("HostRounds")
+  courses      Course[] @relation("HostCourses")
+}
+
+model Course {
+  id         String   @id @default(cuid())
+  hostId     String?
+  name       String
+  location   String
+  active     Boolean  @default(true)
+  source     String?
+  externalId String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  host       User?    @relation("HostCourses", fields: [hostId], references: [id])
+  teeSets    TeeSet[]
+
+  @@index([hostId])
+  @@index([externalId])
+}
+
+model TeeSet {
+  id       String  @id @default(cuid())
+  courseId String
+  name     String
+  colour   String
+  rating   Float?
+  slope    Int?
+  active   Boolean @default(true)
+  course   Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  holes    Hole[]
+
+  @@index([courseId])
+}
+
+model Hole {
+  id          String @id @default(cuid())
+  teeSetId    String
+  number      Int
+  par         Int
+  strokeIndex Int
+  distance    Int?
+  teeSet      TeeSet @relation(fields: [teeSetId], references: [id], onDelete: Cascade)
+
+  @@unique([teeSetId, number])
+  @@unique([teeSetId, strokeIndex])
+  @@index([teeSetId])
+}
+
+model Round {
+  id             String        @id @default(cuid())
+  hostId         String
+  joinCode       String        @unique
+  joinCodeActive Boolean       @default(true)
+  courseName     String
+  courseLocation String
+  teeName        String
+  teeColour      String
+  teeSetSnapshot Json
+  status         RoundStatus   @default(setup)
+  scoringFormat  ScoringFormat @default(stableford)
+  holesCount     Int           @default(18)
+  teamScoring    String        @default("aggregate")
+  courseRating   Float?
+  slopeRating    Int?
+  templateFromId String?
+  createdAt      DateTime      @default(now())
+  completedAt    DateTime?
+  host           User          @relation("HostRounds", fields: [hostId], references: [id])
+  players        Player[]
+  scores         ScoreEntry[]
+  scoreEvents    ScoreEvent[]
+  exports        ExportJob[]
+  holeNotes      HoleNote[]
+  teams          Team[]
+
+  @@index([hostId])
+  @@index([status])
+}
+
+model Team {
+  id        String   @id @default(cuid())
+  roundId   String
+  name      String
+  createdAt DateTime @default(now())
+  round     Round    @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  players   Player[]
+
+  @@unique([roundId, name])
+  @@index([roundId])
+}
+
+model Player {
+  id              String     @id @default(cuid())
+  roundId         String
+  teamId          String?
+  displayName     String
+  playingHandicap Int
+  memberRole      MemberRole @default(player)
+  joinedAt        DateTime   @default(now())
+  round           Round      @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  team            Team?      @relation(fields: [teamId], references: [id])
+  scores          ScoreEntry[]
+  holeNotes       HoleNote[]
+
+  @@unique([roundId, displayName])
+  @@index([roundId])
+  @@index([teamId])
+}
+
+model ScoreEntry {
+  id         String   @id @default(cuid())
+  roundId    String
+  playerId   String
+  holeNumber Int
+  grossScore Int
+  version    Int      @default(1)
+  enteredBy  String
+  updatedAt  DateTime @updatedAt
+  round      Round    @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  player     Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  events     ScoreEvent[]
+
+  @@unique([roundId, playerId, holeNumber])
+  @@index([roundId])
+  @@index([playerId])
+}
+
+model ScoreEvent {
+  id            String     @id @default(cuid())
+  scoreEntryId  String
+  roundId       String
+  previousScore Int?
+  newScore      Int
+  actorId       String
+  createdAt     DateTime   @default(now())
+  scoreEntry    ScoreEntry @relation(fields: [scoreEntryId], references: [id], onDelete: Cascade)
+  round         Round      @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  @@index([roundId])
+  @@index([scoreEntryId])
+}
+
+model HoleNote {
+  id         String   @id @default(cuid())
+  roundId    String
+  playerId   String
+  holeNumber Int
+  note       String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  round      Round    @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  player     Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([roundId, playerId, holeNumber])
+  @@index([roundId])
+}
+
+model ExportJob {
+  id          String    @id @default(cuid())
+  roundId     String
+  requestedBy String
+  status      String    @default("pending")
+  filePath    String?
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime?
+  round       Round     @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  @@index([roundId])
+}
+
+model MagicLinkToken {
+  id        String    @id @default(cuid())
+  email     String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email])
+  @@index([token])
+}
