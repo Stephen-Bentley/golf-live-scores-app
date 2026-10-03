@@ -16,6 +16,7 @@ type BoardEntry = {
   rank: number;
   playerId: string;
   displayName: string;
+  teamName: string | null;
   playingHandicap: number;
   totalPoints: number;
   totalGross: number;
@@ -23,6 +24,7 @@ type BoardEntry = {
   holesCompleted: number;
   isComplete: boolean;
   lastUpdate: string | null;
+  lastHoleNumber: number | null;
 };
 
 type Player = {
