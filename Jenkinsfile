@@ -87,7 +87,7 @@ pipeline {
                         sshpass -e scp ${SSH_OPTS} docker-compose.yml \\
                             "${PI_USER}@${PI_HOST}:${PI_DEPLOY_DIR}/docker-compose.yml"
 
-                        docker save "${IMAGE_NAME}:${BUILD_NUMBER}" | gzip | \\
+                        docker save fairway-live:latest | gzip | \\
                             sshpass -e ssh ${SSH_OPTS} "${PI_USER}@${PI_HOST}" \\
                             'gunzip | docker load'
 
@@ -95,26 +95,23 @@ pipeline {
                             "test -f '${PI_DEPLOY_DIR}/.env' || { echo 'Missing ${PI_DEPLOY_DIR}/.env on the Pi.'; exit 1; }"
 
                         sshpass -e ssh ${SSH_OPTS} "${PI_USER}@${PI_HOST}" \\
-                            "sh -s -- '${IMAGE_NAME}' '${BUILD_NUMBER}' '${FAIRWAY_HOST_PORT}' '${PI_DEPLOY_DIR}'" <<'REMOTE_PI'
+                            "sh -s -- '${FAIRWAY_HOST_PORT}'" <<'REMOTE_PI'
                         set -eu
-                        IMAGE_NAME="$1"
-                        BUILD_NUMBER="$2"
-                        FAIRWAY_HOST_PORT="$3"
-                        PI_DEPLOY_DIR="$4"
-                        cd "$PI_DEPLOY_DIR"
+                        FAIRWAY_HOST_PORT="$1"
+                        cd /home/hosting/fairway-live
                         docker compose -p fairway-live up -d db
                         docker rm --force fairway-live-app 2>/dev/null || true
                         docker run --detach \\
                             --name fairway-live-app \\
                             --restart unless-stopped \\
                             --network fairway-live_default \\
-                            --env-file "$PI_DEPLOY_DIR/.env" \\
+                            --env-file /home/hosting/fairway-live/.env \\
                             --env DATABASE_URL='postgresql://postgres:postgres@db:5432/fairway_live?schema=public' \\
                             --env NODE_ENV=production \\
                             --env PORT=3000 \\
                             --env HOSTNAME=0.0.0.0 \\
                             --publish "$FAIRWAY_HOST_PORT:3000" \\
-                            "$IMAGE_NAME:$BUILD_NUMBER"
+                            fairway-live:latest
 REMOTE_PI
 REMOTE_DEPLOY
                     '''
