@@ -95,24 +95,10 @@ pipeline {
                             "test -f '${PI_DEPLOY_DIR}/.env' || { echo 'Missing ${PI_DEPLOY_DIR}/.env on the Pi.'; exit 1; }"
 
                         sshpass -e ssh ${SSH_OPTS} "${PI_USER}@${PI_HOST}" \\
-                            "sh -s -- '${FAIRWAY_HOST_PORT}'" <<'REMOTE_PI'
-                        set -eu
-                        FAIRWAY_HOST_PORT="$1"
-                        cd /home/hosting/fairway-live
-                        docker compose -p fairway-live up -d db
-                        docker rm --force fairway-live-app 2>/dev/null || true
-                        docker run --detach \\
-                            --name fairway-live-app \\
-                            --restart unless-stopped \\
-                            --network fairway-live_default \\
-                            --env-file /home/hosting/fairway-live/.env \\
-                            --env DATABASE_URL='postgresql://postgres:postgres@db:5432/fairway_live?schema=public' \\
-                            --env NODE_ENV=production \\
-                            --env PORT=3000 \\
-                            --env HOSTNAME=0.0.0.0 \\
-                            --publish "$FAIRWAY_HOST_PORT:3000" \\
-                            fairway-live:latest
-REMOTE_PI
+                            "cd '${PI_DEPLOY_DIR}' && docker compose -p fairway-live up -d db && docker rm --force fairway-live-app 2>/dev/null || true"
+
+                        sshpass -e ssh ${SSH_OPTS} "${PI_USER}@${PI_HOST}" \\
+                            "docker run --detach --name fairway-live-app --restart unless-stopped --network fairway-live_default --env-file '${PI_DEPLOY_DIR}/.env' --env 'DATABASE_URL=postgresql://postgres:postgres@db:5432/fairway_live?schema=public' --env NODE_ENV=production --env PORT=3000 --env HOSTNAME=0.0.0.0 --publish '${FAIRWAY_HOST_PORT}:3000' fairway-live:latest"
 REMOTE_DEPLOY
                     '''
                 }
