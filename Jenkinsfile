@@ -95,8 +95,12 @@ pipeline {
                             "test -f '${PI_DEPLOY_DIR}/.env' || { echo 'Missing ${PI_DEPLOY_DIR}/.env on the Pi.'; exit 1; }"
 
                         sshpass -e ssh ${SSH_OPTS} "${PI_USER}@${PI_HOST}" \\
-                            "IMAGE_NAME='${IMAGE_NAME}' BUILD_NUMBER='${BUILD_NUMBER}' FAIRWAY_HOST_PORT='${FAIRWAY_HOST_PORT}' PI_DEPLOY_DIR='${PI_DEPLOY_DIR}' sh -s" <<'REMOTE_PI'
+                            "sh -s -- '${IMAGE_NAME}' '${BUILD_NUMBER}' '${FAIRWAY_HOST_PORT}' '${PI_DEPLOY_DIR}'" <<'REMOTE_PI'
                         set -eu
+                        IMAGE_NAME="$1"
+                        BUILD_NUMBER="$2"
+                        FAIRWAY_HOST_PORT="$3"
+                        PI_DEPLOY_DIR="$4"
                         cd "$PI_DEPLOY_DIR"
                         docker compose -p fairway-live up -d db
                         docker rm --force fairway-live-app 2>/dev/null || true
