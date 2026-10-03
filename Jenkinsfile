@@ -37,7 +37,7 @@ pipeline {
 
         stage('Build Docker image') {
             steps {
-                sh 'docker buildx build --platform linux/arm64 --load --tag ${IMAGE_NAME}:${BUILD_NUMBER} --tag ${IMAGE_NAME}:latest .'
+                sh 'echo "Docker image will be built natively on the Raspberry Pi during deployment."'
             }
         }
 
@@ -87,18 +87,15 @@ pipeline {
                         sshpass -e scp ${SSH_OPTS} docker-compose.yml \\
                             "${PI_USER}@${PI_HOST}:${PI_DEPLOY_DIR}/docker-compose.yml"
 
-                        docker save fairway-live:latest | gzip | \\
-                            sshpass -e ssh ${SSH_OPTS} "${PI_USER}@${PI_HOST}" \\
-                            'gunzip | docker load'
-
                         sshpass -e ssh ${SSH_OPTS} "${PI_USER}@${PI_HOST}" \\
                             "test -f '${PI_DEPLOY_DIR}/.env' || { echo 'Missing ${PI_DEPLOY_DIR}/.env on the Pi.'; exit 1; }"
 
-                        sshpass -e ssh ${SSH_OPTS} "${PI_USER}@${PI_HOST}" \\
-                            "cd '${PI_DEPLOY_DIR}' && docker compose -p fairway-live up -d db && docker rm --force fairway-live-app 2>/dev/null || true"
+                        tar --exclude=.git --exclude=node_modules --exclude=.next --exclude=.env -czf - . | \\
+                            sshpass -e ssh ${SSH_OPTS} "${PI_USER}@${PI_HOST}" \\
+                            "tar -xzf - -C '${PI_DEPLOY_DIR}'"
 
                         sshpass -e ssh ${SSH_OPTS} "${PI_USER}@${PI_HOST}" \\
-                            "docker run --detach --name fairway-live-app --restart unless-stopped --network fairway-live_default --env-file '${PI_DEPLOY_DIR}/.env' --env 'DATABASE_URL=postgresql://postgres:postgres@db:5432/fairway_live?schema=public' --env NODE_ENV=production --env PORT=3000 --env HOSTNAME=0.0.0.0 --publish '${FAIRWAY_HOST_PORT}:3000' fairway-live:latest"
+                            "cd '${PI_DEPLOY_DIR}' && docker compose -p fairway-live up -d --build app"
 
                         sleep 5
                         CONTAINER_STATUS="$(sshpass -e ssh ${SSH_OPTS} "${PI_USER}@${PI_HOST}" \\
