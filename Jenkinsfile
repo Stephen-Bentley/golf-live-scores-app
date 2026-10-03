@@ -37,7 +37,7 @@ pipeline {
 
         stage('Build Docker image') {
             steps {
-                sh 'docker build --tag ${IMAGE_NAME}:${BUILD_NUMBER} --tag ${IMAGE_NAME}:latest .'
+                sh 'docker buildx build --platform linux/arm64 --load --tag ${IMAGE_NAME}:${BUILD_NUMBER} --tag ${IMAGE_NAME}:latest .'
             }
         }
 
@@ -78,7 +78,7 @@ pipeline {
                         touch "${SSH_DIR}/known_hosts"
                         chmod 600 "${SSH_DIR}/known_hosts"
                         ssh-keyscan -H "${PI_HOST}" >> "${SSH_DIR}/known_hosts" 2>/dev/null
-                        SSH_OPTS="-o UserKnownHostsFile=${SSH_DIR}/known_hosts -o StrictHostKeyChecking=yes"
+                        SSH_OPTS="-o UserKnownHostsFile=${SSH_DIR}/known_hosts -o StrictHostKeyChecking=yes -o ConnectTimeout=15 -o ServerAliveInterval=5 -o ServerAliveCountMax=3"
                         export SSHPASS="${PI_PASSWORD}"
 
                         sshpass -e ssh ${SSH_OPTS} "${PI_USER}@${PI_HOST}" \\
@@ -99,6 +99,16 @@ pipeline {
 
                         sshpass -e ssh ${SSH_OPTS} "${PI_USER}@${PI_HOST}" \\
                             "docker run --detach --name fairway-live-app --restart unless-stopped --network fairway-live_default --env-file '${PI_DEPLOY_DIR}/.env' --env 'DATABASE_URL=postgresql://postgres:postgres@db:5432/fairway_live?schema=public' --env NODE_ENV=production --env PORT=3000 --env HOSTNAME=0.0.0.0 --publish '${FAIRWAY_HOST_PORT}:3000' fairway-live:latest"
+
+                        sleep 5
+                        CONTAINER_STATUS="$(sshpass -e ssh ${SSH_OPTS} "${PI_USER}@${PI_HOST}" \\
+                            "docker inspect --format '{{.State.Status}}' fairway-live-app")"
+                        if [ "${CONTAINER_STATUS}" != "running" ]; then
+                            sshpass -e ssh ${SSH_OPTS} "${PI_USER}@${PI_HOST}" \\
+                                "docker logs fairway-live-app 2>&1 || true"
+                            echo "Fairway Live container status: ${CONTAINER_STATUS}"
+                            exit 1
+                        fi
 REMOTE_DEPLOY
                     '''
                 }
