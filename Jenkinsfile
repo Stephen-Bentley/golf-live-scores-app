@@ -59,8 +59,8 @@ pipeline {
                     sh '''
                         docker run --rm -i \\
                             --volume /var/run/docker.sock:/var/run/docker.sock \\
-                            --volume "${WORKSPACE}:/workspace" \\
-                            --workdir /workspace \\
+                            --volumes-from ${JENKINS_CONTAINER} \\
+                            --workdir /var/jenkins_home/workspace/${JOB_NAME} \\
                             --env PI_HOST \\
                             --env PI_DEPLOY_DIR \\
                             --env PI_USER \\
