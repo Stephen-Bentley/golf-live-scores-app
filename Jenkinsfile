@@ -99,7 +99,7 @@ pipeline {
 
                         sleep 5
                         if ! sshpass -e ssh ${SSH_OPTS} "${PI_USER}@${PI_HOST}" \\
-                            "docker inspect --format '{{.State.Status}}' fairway-live-app" | grep -qx running; then
+                            docker ps --filter name=fairway-live-app --filter status=running --quiet | grep -q .; then
                             sshpass -e ssh ${SSH_OPTS} "${PI_USER}@${PI_HOST}" \\
                                 "docker logs fairway-live-app 2>&1 || true"
                             echo "Fairway Live container is not running."
