@@ -89,7 +89,7 @@ export async function setHostSessionCookie(session: HostSession) {
   jar.set(HOST_SESSION_COOKIE, JSON.stringify(session), {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: process.env.NEXT_PUBLIC_APP_URL?.startsWith("https://") ?? false,
     path: "/",
     maxAge: SESSION_DAYS * 24 * 60 * 60,
   });
@@ -100,7 +100,7 @@ export async function setPlayerSessionCookie(session: PlayerSession) {
   jar.set(PLAYER_SESSION_COOKIE, JSON.stringify(session), {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: process.env.NEXT_PUBLIC_APP_URL?.startsWith("https://") ?? false,
     path: "/",
     maxAge: SESSION_DAYS * 24 * 60 * 60,
   });

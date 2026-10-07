@@ -98,12 +98,11 @@ pipeline {
                             "cd '${PI_DEPLOY_DIR}' && docker compose -p fairway-live up -d --build app"
 
                         sleep 5
-                        CONTAINER_STATUS="$(sshpass -e ssh ${SSH_OPTS} "${PI_USER}@${PI_HOST}" \\
-                            "docker inspect --format '{{.State.Status}}' fairway-live-app")"
-                        if [ "${CONTAINER_STATUS}" != "running" ]; then
+                        if ! sshpass -e ssh ${SSH_OPTS} "${PI_USER}@${PI_HOST}" \\
+                            "docker inspect --format '{{.State.Status}}' fairway-live-app" | grep -qx running; then
                             sshpass -e ssh ${SSH_OPTS} "${PI_USER}@${PI_HOST}" \\
                                 "docker logs fairway-live-app 2>&1 || true"
-                            echo "Fairway Live container status: ${CONTAINER_STATUS}"
+                            echo "Fairway Live container is not running."
                             exit 1
                         fi
 REMOTE_DEPLOY
