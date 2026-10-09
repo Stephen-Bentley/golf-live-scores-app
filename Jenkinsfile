@@ -16,6 +16,8 @@ pipeline {
 
     environment {
         IMAGE_NAME = 'fairway-live'
+        REGISTRY = '192.168.1.13:5000'
+        IMAGE_PLATFORM = 'linux/arm64'
         PI_HOST = '192.168.1.14'
         PI_DEPLOY_DIR = '/home/hosting/fairway-live'
         PI_CREDENTIALS_ID = 'raspberry-pi-ssh'
@@ -35,9 +37,17 @@ pipeline {
             }
         }
 
-        stage('Build Docker image') {
+        stage('Build and publish Docker image') {
             steps {
-                sh 'echo "Docker image will be built natively on the Raspberry Pi during deployment."'
+                sh '''
+                    set -eu
+                    docker buildx build \
+                        --platform "${IMAGE_PLATFORM}" \
+                        --tag "${REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}" \
+                        --tag "${REGISTRY}/${IMAGE_NAME}:latest" \
+                        --push \
+                        .
+                '''
             }
         }
 
