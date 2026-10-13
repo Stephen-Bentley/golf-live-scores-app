@@ -108,8 +108,9 @@ pipeline {
                             "cd '${PI_DEPLOY_DIR}' && docker compose -p fairway-live up -d --build app"
 
                         sleep 5
-                        if ! sshpass -e ssh ${SSH_OPTS} "${PI_USER}@${PI_HOST}" \\
-                            docker ps --filter name=fairway-live-app --filter status=running --quiet | grep -q .; then
+                        RUNNING_CONTAINER_ID=$(sshpass -e ssh ${SSH_OPTS} "${PI_USER}@${PI_HOST}" \\
+                            "docker ps --filter name=^fairway-live-app$ --filter status=running --quiet")
+                        if [ -z "${RUNNING_CONTAINER_ID}" ]; then
                             sshpass -e ssh ${SSH_OPTS} "${PI_USER}@${PI_HOST}" \\
                                 "docker logs fairway-live-app 2>&1 || true"
                             echo "Fairway Live container is not running."
