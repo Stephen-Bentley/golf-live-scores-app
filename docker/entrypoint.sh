@@ -9,7 +9,7 @@ if [ -z "$DATABASE_URL" ]; then
 fi
 
 i=0
-until npx prisma db push --accept-data-loss 2>&1; do
+until npx prisma migrate deploy 2>&1; do
   i=$((i + 1))
   if [ "$i" -ge 30 ]; then
     echo "ERROR: could not update database schema after 30 attempts"

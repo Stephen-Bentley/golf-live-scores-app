@@ -12,10 +12,17 @@ export async function GET(_request: Request, { params }: Params) {
   if (!player && !host) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const round = await prisma.round.findUnique({ where: { id: roundId } });
+  if (!round) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const isHost = host?.userId === round.hostId;
+  const isPlayer = player?.roundId === roundId;
+  if (!isHost && !isPlayer) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const notes = await prisma.holeNote.findMany({
     where: {
       roundId,
-      ...(player && player.roundId === roundId
+      ...(isPlayer && !isHost
         ? { playerId: player.playerId }
         : {}),
     },

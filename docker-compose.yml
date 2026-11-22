@@ -3,7 +3,7 @@
 # Start everything:
 #   docker compose up -d --build
 #
-# App:  http://localhost:3000
+# App:  https://your-domain.example (place behind a TLS reverse proxy)
 # Stop: docker compose down
 # Wipe DB volume: docker compose down -v
 #
@@ -16,7 +16,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env before starting the stack}
       POSTGRES_DB: fairway_live
     volumes:
       - fairway_pg_data:/var/lib/postgresql/data
@@ -25,8 +25,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-    ports:
-      - "5432:5432"
 
   app:
     build:
@@ -41,8 +39,8 @@ services:
       - .env
     environment:
       # Inside Docker the DB host is the service name "db", not localhost
-      DATABASE_URL: postgresql://postgres:postgres@db:5432/fairway_live?schema=public
-      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/fairway_live?schema=public
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:?Set NEXT_PUBLIC_APP_URL to the public HTTPS URL}
       # Explicitly pass through the same key from .env (Compose substitution)
       GOLF_COURSE_API_KEY: ${GOLF_COURSE_API_KEY}
       NODE_ENV: production

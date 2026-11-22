@@ -64,4 +64,17 @@ Rebuild so the image includes the new Prisma schema:
 docker compose up -d --build
 ```
 
-The entrypoint runs `prisma db push` on every start, so the database updates automatically.
+The entrypoint runs `prisma migrate deploy` on every start, so only reviewed, checked-in
+migrations are applied. It will not use `db push` or accept destructive schema changes.
+
+### Existing database baseline
+
+This release introduces the first checked-in migration. If a database was created by an
+earlier version using `prisma db push`, take a backup and mark the baseline as applied
+once before deploying this image:
+
+```sh
+npx prisma migrate resolve --applied 20261122120000_initial_schema
+```
+
+Run this only after confirming the existing database matches `prisma/schema.prisma`.

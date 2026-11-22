@@ -10,6 +10,9 @@ const bodySchema = z.object({
  * Start hosting without email — creates a local guest host account.
  */
 export async function POST(request: Request) {
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_GUEST_HOSTS !== "true") {
+    return NextResponse.json({ error: "Guest hosting is disabled" }, { status: 403 });
+  }
   try {
     const body = bodySchema.parse(await request.json());
     const session = await createGuestHost(body.displayName);

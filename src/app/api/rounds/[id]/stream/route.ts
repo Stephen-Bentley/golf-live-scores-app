@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { getHostSession, getPlayerSession } from "@/lib/auth";
+import { acquireStream, releaseStream } from "@/lib/stream-limit";
 import {
   buildLeaderboard,
   buildTeamStandings,
@@ -11,6 +12,7 @@ import {
 } from "@/domain/scoring";
 
 type Params = { params: Promise<{ id: string }> };
+const STREAM_MAX_AGE_MS = 5 * 60_000;
 
 export async function GET(request: Request, { params }: Params) {
   const { id } = await params;
@@ -19,9 +21,15 @@ export async function GET(request: Request, { params }: Params) {
   if (!host && !player) {
     return new Response("Unauthorized", { status: 401 });
   }
+  const streamKey = host ? `host:${host.userId}` : `player:${player!.playerId}`;
+  if (!acquireStream(streamKey)) {
+    return new Response("Too many live connections", { status: 429 });
+  }
 
   const encoder = new TextEncoder();
   let closed = false;
+  let release: (() => void) | undefined;
+  let maxAgeTimeout: ReturnType<typeof setTimeout> | undefined;
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -32,7 +40,11 @@ export async function GET(request: Request, { params }: Params) {
         );
       };
 
+      let ticking = false;
       const tick = async () => {
+        if (ticking || closed) return;
+        ticking = true;
+        try {
         const round = await prisma.round.findUnique({
           where: { id },
           include: {
@@ -111,6 +123,9 @@ export async function GET(request: Request, { params }: Params) {
           leaderboard: board,
           teams,
         });
+        } finally {
+          ticking = false;
+        }
       };
 
       await tick();
@@ -119,14 +134,19 @@ export async function GET(request: Request, { params }: Params) {
       }, 3000);
 
       const onAbort = () => {
+        if (closed) return;
         closed = true;
         clearInterval(interval);
+        if (maxAgeTimeout) clearTimeout(maxAgeTimeout);
+        release?.();
         try {
           controller.close();
         } catch {
           /* ignore */
         }
       };
+      release = () => releaseStream(streamKey);
+      maxAgeTimeout = setTimeout(onAbort, STREAM_MAX_AGE_MS);
       request.signal.addEventListener("abort", onAbort);
     },
   });

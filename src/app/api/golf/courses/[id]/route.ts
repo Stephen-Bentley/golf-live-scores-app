@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { getHostSession } from "@/lib/auth";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 const GOLF_API = "https://api.golfcourseapi.com";
 
@@ -9,6 +11,12 @@ type Params = { params: Promise<{ id: string }> };
  * Used when importing a tee set into a frozen round snapshot.
  */
 export async function GET(_request: Request, { params }: Params) {
+  const host = await getHostSession();
+  if (!host) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const limit = checkRateLimit(`golf-detail:${host.userId}`, 30, 60_000);
+  if (!limit.allowed) {
+    return NextResponse.json({ error: "Too many course requests. Try again shortly." }, { status: 429 });
+  }
   const apiKey = process.env.GOLF_COURSE_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
@@ -31,6 +39,7 @@ export async function GET(_request: Request, { params }: Params) {
         Authorization: `Bearer ${apiKey}`,
         Accept: "application/json",
       },
+      signal: AbortSignal.timeout(10_000),
     });
     const body = await res.text();
     return new NextResponse(body, {

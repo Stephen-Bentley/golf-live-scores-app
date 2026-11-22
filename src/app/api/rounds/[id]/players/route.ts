@@ -33,6 +33,12 @@ export async function PATCH(request: Request, { params }: Params) {
   if ("error" in auth && auth.error) return auth.error;
   try {
     const body = patchSchema.parse(await request.json());
+    const current = await prisma.player.findFirst({ where: { id: body.playerId, roundId } });
+    if (!current) return NextResponse.json({ error: "Player not found" }, { status: 404 });
+    if (body.teamId) {
+      const team = await prisma.team.findFirst({ where: { id: body.teamId, roundId } });
+      if (!team) return NextResponse.json({ error: "Invalid team" }, { status: 400 });
+    }
     if (body.displayName) {
       const clash = await prisma.player.findFirst({
         where: {
@@ -70,6 +76,8 @@ export async function DELETE(request: Request, { params }: Params) {
   if ("error" in auth && auth.error) return auth.error;
   try {
     const body = deleteSchema.parse(await request.json());
+    const player = await prisma.player.findFirst({ where: { id: body.playerId, roundId } });
+    if (!player) return NextResponse.json({ error: "Player not found" }, { status: 404 });
     await prisma.scoreEntry.deleteMany({ where: { playerId: body.playerId, roundId } });
     await prisma.player.delete({ where: { id: body.playerId } });
     return NextResponse.json({ ok: true });

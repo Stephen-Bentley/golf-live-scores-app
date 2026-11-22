@@ -51,6 +51,11 @@ type HoleResult = {
   points: number | null;
 };
 
+/** Prevent spreadsheet applications from treating user-controlled text as formulas. */
+function safeSpreadsheetText(value: string): string {
+  return /^[=+\-@]/.test(value) ? `'${value}` : value;
+}
+
 function holeResultsForPlayer(
   holes: Hole[],
   player: ExportPlayer,
@@ -122,7 +127,7 @@ export async function generateRoundWorkbook(
   for (const e of board) {
     lb.addRow({
       rank: e.rank,
-      player: e.displayName,
+      player: safeSpreadsheetText(e.displayName),
       hcp: e.playingHandicap,
       holes: e.holesCompleted,
       completion: e.isComplete ? "Complete" : "In progress",
@@ -154,7 +159,7 @@ export async function generateRoundWorkbook(
     const entry = board.find((b) => b.playerId === player.id);
     const results = holeResultsForPlayer(holes, player, round.scores);
     const row: (string | number)[] = [
-      player.displayName,
+      safeSpreadsheetText(player.displayName),
       player.playingHandicap,
       entry?.rank ?? "",
       entry?.totalGross ?? 0,
@@ -181,7 +186,7 @@ export async function generateRoundWorkbook(
     const results = holeResultsForPlayer(holes, player, round.scores);
 
     // Player header
-    cards.getCell(rowNum, 1).value = player.displayName;
+    cards.getCell(rowNum, 1).value = safeSpreadsheetText(player.displayName);
     cards.getCell(rowNum, 1).font = { bold: true, size: 14 };
     cards.getCell(rowNum, 2).value = `Handicap ${player.playingHandicap}`;
     cards.getCell(rowNum, 3).value = entry
@@ -253,10 +258,10 @@ export async function generateRoundWorkbook(
 
   // --- Sheet 4: Round setup ---
   const setup = workbook.addWorksheet("Round setup");
-  setup.addRow(["Course", round.courseName]);
-  setup.addRow(["Location", round.courseLocation]);
-  setup.addRow(["Tee set", round.teeName]);
-  setup.addRow(["Tee colour", round.teeColour]);
+  setup.addRow(["Course", safeSpreadsheetText(round.courseName)]);
+  setup.addRow(["Location", safeSpreadsheetText(round.courseLocation)]);
+  setup.addRow(["Tee set", safeSpreadsheetText(round.teeName)]);
+  setup.addRow(["Tee colour", safeSpreadsheetText(round.teeColour)]);
   setup.addRow(["Round ID", round.id]);
   setup.addRow(["Join code", round.joinCode]);
   setup.addRow(["Status", round.status]);

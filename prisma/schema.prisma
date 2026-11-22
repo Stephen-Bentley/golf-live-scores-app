@@ -20,6 +20,11 @@ enum MemberRole {
   player
 }
 
+enum SessionRole {
+  host
+  player
+}
+
 enum ScoringFormat {
   stableford
   stroke
@@ -213,4 +218,19 @@ model MagicLinkToken {
 
   @@index([email])
   @@index([token])
+}
+
+model AuthSession {
+  id        String      @id @default(cuid())
+  tokenHash String      @unique
+  role      SessionRole
+  userId    String?
+  playerId  String?
+  roundId   String?
+  expiresAt DateTime
+  createdAt DateTime    @default(now())
+
+  @@index([expiresAt])
+  @@index([userId])
+  @@index([playerId])
 }

@@ -1,12 +1,19 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { getHostSession } from "@/lib/auth";
+import { getHostSession, getPlayerSession } from "@/lib/auth";
 
 type Params = { params: Promise<{ id: string }> };
 
 export async function GET(_request: Request, { params }: Params) {
   const { id } = await params;
+  const host = await getHostSession();
+  const player = await getPlayerSession();
+  const round = await prisma.round.findUnique({ where: { id } });
+  if (!round) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (host?.userId !== round.hostId && player?.roundId !== id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const teams = await prisma.team.findMany({
     where: { roundId: id },
     include: { players: true },

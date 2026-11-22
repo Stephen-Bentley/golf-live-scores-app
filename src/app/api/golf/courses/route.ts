@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { getHostSession } from "@/lib/auth";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 const GOLF_API = "https://api.golfcourseapi.com";
 
@@ -6,6 +8,12 @@ const GOLF_API = "https://api.golfcourseapi.com";
  * Proxy for GolfCourseAPI search — keeps the Bearer token server-side.
  */
 export async function GET(request: Request) {
+  const host = await getHostSession();
+  if (!host) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const limit = checkRateLimit(`golf-search:${host.userId}`, 20, 60_000);
+  if (!limit.allowed) {
+    return NextResponse.json({ error: "Too many course searches. Try again shortly." }, { status: 429 });
+  }
   const apiKey = process.env.GOLF_COURSE_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
@@ -40,6 +48,7 @@ export async function GET(request: Request) {
         Authorization: `Bearer ${apiKey}`,
         Accept: "application/json",
       },
+      signal: AbortSignal.timeout(10_000),
     });
     const body = await res.text();
     return new NextResponse(body, {
