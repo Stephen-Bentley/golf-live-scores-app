@@ -8,10 +8,10 @@ Matches the product implementation plan:
 
 | Layer | Technology |
 |-------|------------|
-| App | **Next.js 15.1.9** (App Router) + **TypeScript** — patched for CVE-2025-66478 |
+| App | **Next.js 15.5.29** (App Router) + **TypeScript** |
 | Validation | **Zod** |
 | Database | **PostgreSQL** via **Prisma** |
-| Auth | Email magic-link (hosts) + join-code guest sessions (players) |
+| Auth | Quick-start guest hosts or email magic-link hosts + join-code guest sessions (players) |
 | Unit tests | **Vitest** |
 | Excel export | **ExcelJS** |
 | Styling | **Tailwind CSS** |
@@ -27,21 +27,24 @@ The previous vanilla JS / localStorage prototype is preserved under `_legacy_pro
 
 ## Run with Docker (recommended)
 
-One command starts the app **and** PostgreSQL:
+Create a `.env` file first. Start from the example, set a strong database password,
+and set the public HTTPS URL used for deployment:
 
 ```bash
-# Optional: put your GolfCourseAPI key in a .env file
-# GOLF_COURSE_API_KEY=your_key_here
+cp .env.example .env
+# Edit .env: set POSTGRES_PASSWORD and NEXT_PUBLIC_APP_URL.
+# GOLF_COURSE_API_KEY is optional.
 
 docker compose up -d --build
 ```
 
-Then open **http://localhost:3000**
+For a local deployment, open **http://localhost:3000**. Public deployments must
+sit behind a TLS reverse proxy and use an `https://` value for `NEXT_PUBLIC_APP_URL`.
 
 | Service | URL / port |
 |---------|------------|
-| Fairway Live | http://localhost:3000 |
-| PostgreSQL | localhost:5432 (user/pass/db: `postgres` / `postgres` / `fairway_live`) |
+| Fairway Live | `http://localhost:3000` locally; HTTPS URL in public deployments |
+| PostgreSQL | Internal Docker service only (`db:5432`) |
 
 Useful commands:
 
@@ -57,22 +60,28 @@ On first start the container runs `prisma db push` automatically so the schema i
 
 ---
 
-## Local development (without full Docker app)
+## Local development
 
-## Setup (Node + Docker DB only)
+Run the full Docker stack above for the closest production setup. To run the Next.js
+app directly with `npm run dev`, provide a PostgreSQL instance reachable from your
+machine and set `DATABASE_URL` in `.env` to match it.
 
-### 1. Start PostgreSQL in Docker
+### 1. Start PostgreSQL
 
 ```bash
-docker compose up -d
+docker compose up -d db
 ```
 
-This starts Postgres 16 on `localhost:5432` with:
+The production Compose file intentionally does not publish the database port. For
+direct local development, use a local PostgreSQL installation or a development-only
+Compose override that publishes `5432`; do not expose the database on a public host.
+
+Configure the local database with:
 
 | Setting | Value |
 |---------|--------|
 | User | `postgres` |
-| Password | `postgres` |
+| Password | Value of `POSTGRES_PASSWORD` |
 | Database | `fairway_live` |
 
 ### 2. Configure environment
@@ -81,13 +90,14 @@ This starts Postgres 16 on `localhost:5432` with:
 cp .env.example .env
 ```
 
-Default `DATABASE_URL` already targets the Docker container:
+For direct development, set `DATABASE_URL` to the PostgreSQL instance reachable
+from your machine:
 
 ```env
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/fairway_live?schema=public"
+DATABASE_URL="postgresql://postgres:YOUR_PASSWORD@localhost:5432/fairway_live?schema=public"
 ```
 
-If your Docker Postgres uses different credentials or port, change `DATABASE_URL` to match.
+Replace `YOUR_PASSWORD` with the password for the PostgreSQL instance you are using.
 
 ### 3. Install, generate Prisma client, push schema
 
@@ -111,16 +121,18 @@ Open [http://localhost:3000](http://localhost:3000).
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `DATABASE_URL` | Yes | PostgreSQL URL (default matches `docker-compose.yml`) |
+| `DATABASE_URL` | Yes | PostgreSQL URL reachable from the process running Next.js |
+| `POSTGRES_PASSWORD` | Docker only | Required password for the PostgreSQL container |
 | `GOLF_COURSE_API_KEY` | No | Bearer token for GolfCourseAPI (server-only) |
-| `NEXT_PUBLIC_APP_URL` | No | Public app URL for magic-link emails (default `http://localhost:3000`) |
+| `NEXT_PUBLIC_APP_URL` | Docker/public deployment | Public HTTPS app URL used for magic-link emails |
+| `ALLOW_GUEST_HOSTS` | No | Enables Quick start guest hosts in production; defaults to `true` in Docker Compose. Set `false` for email-only host access. |
 
 ### Database scripts
 
 | Command | Purpose |
 |---------|---------|
-| `npm run db:up` | Start Postgres (`docker compose up -d`) |
-| `npm run db:down` | Stop the Postgres container |
+| `npm run db:up` | Start the full Docker stack (`docker compose up -d`) |
+| `npm run db:down` | Stop the Docker stack |
 | `npm run db:generate` | `prisma generate` |
 | `npm run db:push` | Push schema to the database |
 | `npm run db:studio` | Open Prisma Studio |
@@ -151,11 +163,12 @@ golf live scores app/
 │   │   ├── page.tsx           # Landing page
 │   │   ├── layout.tsx
 │   │   ├── globals.css
-│   │   ├── sign-in/page.tsx   # Host magic-link sign-in
+│   │   ├── sign-in/page.tsx   # Host quick start or magic-link sign-in
 │   │   ├── join/page.tsx      # Player join form
 │   │   ├── dashboard/page.tsx # Host or player dashboard
 │   │   └── api/
 │   │       ├── auth/
+│   │       │   ├── guest-host/route.ts
 │   │       │   ├── magic-link/route.ts
 │   │       │   ├── verify/route.ts
 │   │       │   └── session/route.ts
@@ -191,6 +204,7 @@ golf live scores app/
 
 | Method | Path | Purpose |
 |--------|------|---------|
+| `POST` | `/api/auth/guest-host` | Start a temporary host session (when guest hosting is enabled) |
 | `POST` | `/api/auth/magic-link` | Request host magic link (returns `devToken` in development) |
 | `POST` | `/api/auth/verify` | Consume magic-link token → host session cookie |
 | `GET` | `/api/auth/session` | Current session |
@@ -213,9 +227,15 @@ golf live scores app/
 - **Display names** unique within a round (case-insensitive)
 - **Playing handicap** is a whole number 0–54 for the round
 
-## Development auth
+## Host sign-in and guest hosting
 
-In non-production, `POST /api/auth/magic-link` returns a `devToken`. Use **Open demo magic link** on the sign-in page (or `POST /api/auth/verify` with that token) to establish a host session without email.
+The **Quick start** tab on `/sign-in` creates a temporary host account from a display
+name and starts a 14-day host session. Docker deployments enable it by default;
+set `ALLOW_GUEST_HOSTS=false` to make public deployments email-only.
+
+In non-production, `POST /api/auth/magic-link` returns a `devToken`. Use **Open demo
+magic link** on the sign-in page (or `POST /api/auth/verify` with that token) to
+establish a host session without email.
 
 ## Docs
 

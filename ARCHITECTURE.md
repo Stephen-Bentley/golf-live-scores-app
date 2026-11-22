@@ -16,7 +16,7 @@ Fairway Live is a live golf scoring application. Hosts create rounds from course
 | Framework | Next.js 15 (App Router) + TypeScript |
 | Validation | Zod (`src/lib/types.ts`) |
 | Database | PostgreSQL + Prisma (`prisma/schema.prisma`) |
-| Auth | Magic-link sessions (hosts); join-code guest sessions (players) |
+| Auth | Quick-start guest or magic-link sessions (hosts); join-code guest sessions (players) |
 | Unit tests | Vitest (`src/domain/scoring.test.ts`) |
 | Excel | ExcelJS (`src/lib/export.ts`) |
 | Styling | Tailwind CSS |
@@ -67,7 +67,7 @@ Fairway Live is a live golf scoring application. Hosts create rounds from course
 | Route | Role |
 |-------|------|
 | `/` | Landing |
-| `/sign-in` | Host magic-link request + dev verify |
+| `/sign-in` | Host quick start, magic-link request, and development verification |
 | `/join` | Player join (code, name, handicap) |
 | `/dashboard` | Host round list or player active-round summary |
 
@@ -77,6 +77,7 @@ Score-entry and dedicated leaderboard pages can be added under `/rounds/[id]/…
 
 | Route | Responsibility |
 |-------|----------------|
+| `auth/guest-host` | Create a temporary host and host session when guest hosting is enabled |
 | `auth/magic-link` | Create `MagicLinkToken` (returns `devToken` in development) |
 | `auth/verify` | Consume token → `User` + host session cookie |
 | `auth/session` | Read or clear session cookies |
@@ -103,7 +104,7 @@ Covered by Vitest in `scoring.test.ts`.
 | Module | Owns |
 |--------|------|
 | `lib/db.ts` | Prisma client singleton |
-| `lib/auth.ts` | Magic-link tokens, host/player cookies, join-code generation |
+| `lib/auth.ts` | Guest-host creation, magic-link tokens, host/player cookies, join-code generation |
 | `lib/types.ts` | Zod request schemas |
 | `lib/export.ts` | Three-sheet Excel workbook (Leaderboard, Hole details, Round setup) |
 
@@ -119,15 +120,24 @@ Core entities (see `prisma/schema.prisma`):
 - **ScoreEvent** — audit history of score changes
 - **ExportJob** — export requests + expiry metadata
 - **MagicLinkToken** — one-time host sign-in tokens
+- **AuthSession** — hashed, expiring host or player session token
 
 ## 7. Critical flows
 
 ### Host sign-in
 
-1. Client `POST /api/auth/magic-link` with email  
-2. Server stores token (dev returns `devToken`)  
-3. Client `POST /api/auth/verify`  
-4. HttpOnly host session cookie set  
+Quick start:
+
+1. Client `POST /api/auth/guest-host` with a display name.
+2. Server creates a temporary `User`, persists a hashed host session, and sets an HttpOnly cookie.
+3. The client opens `/dashboard`.
+
+Email link:
+
+1. Client `POST /api/auth/magic-link` with email.
+2. Server stores token (development returns `devToken`).
+3. Client `POST /api/auth/verify`.
+4. Server persists a hashed host session and sets an HttpOnly cookie.
 
 ### Round creation
 
@@ -158,6 +168,7 @@ Core entities (see `prisma/schema.prisma`):
 
 - **API key boundary:** `GOLF_COURSE_API_KEY` is server-only; browser calls `/api/golf/*` only.  
 - **Sessions:** HttpOnly cookies; host vs player roles enforced on each route.  
+- **Guest-host policy:** Guest hosts are enabled in the supplied Docker configuration. Set `ALLOW_GUEST_HOSTS=false` to disable this route in production and require email-link hosts.
 - **Input:** Zod validates emails, handicaps (0–54), scores (1–20), hole numbers, names.  
 - **Join code:** Capability token — revocable (`joinCodeActive`), not a long-lived identity.  
 
@@ -184,7 +195,7 @@ Core entities (see `prisma/schema.prisma`):
 - Course catalog admin UI and create-round form in the dashboard are not fully built (APIs and schema support them).
 - Mobile score-entry and live leaderboard pages should be added under `/rounds/[id]/…` and wired to existing APIs.
 - Realtime: leaderboard API is poll-ready; WebSocket/SSE not yet implemented.
-- Production magic-link needs an email provider (dev uses returned token).
+- Production email-link delivery needs an email provider (development returns the token).
 - Playwright browser tests not scaffolded yet.
 - Row-level security in PostgreSQL can be added later; authorization is currently enforced in API handlers.
 

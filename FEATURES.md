@@ -17,7 +17,7 @@
 | Edit players | `PATCH/DELETE /api/rounds/[id]/players` |
 | Last-hole activity | Leaderboard `lastHoleNumber` |
 | Join rate limit | `src/lib/rate-limit.ts` on join |
-| Guest host (no email) | `/api/auth/guest-host` |
+| Guest host (no email) | Quick start on `/sign-in` → `POST /api/auth/guest-host`; enabled by default in Docker and controlled by `ALLOW_GUEST_HOSTS` in production |
 | Tests | `tests/feature-pack.test.ts` + existing flow tests |
 
 After pull:
