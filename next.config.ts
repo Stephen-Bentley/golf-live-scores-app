@@ -2,6 +2,13 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   async headers() {
+    // Next's development client uses eval to compile and hydrate pages. Applying
+    // the production CSP while developing prevents client-side form handlers
+    // (including guest host sign-in) from ever attaching.
+    if (process.env.NODE_ENV !== "production") {
+      return [];
+    }
+
     return [
       {
         source: "/(.*)",

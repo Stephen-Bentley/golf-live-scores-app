@@ -6,11 +6,15 @@ const bodySchema = z.object({
   displayName: z.string().trim().min(1).max(40),
 });
 
+export function guestHostingEnabled(env: NodeJS.ProcessEnv = process.env) {
+  return env.NODE_ENV !== "production" || env.ALLOW_GUEST_HOSTS === "true";
+}
+
 /**
  * Start hosting without email — creates a local guest host account.
  */
 export async function POST(request: Request) {
-  if (process.env.NODE_ENV === "production" && process.env.ALLOW_GUEST_HOSTS !== "true") {
+  if (!guestHostingEnabled()) {
     return NextResponse.json({ error: "Guest hosting is disabled" }, { status: 403 });
   }
   try {

@@ -43,6 +43,9 @@ services:
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:?Set NEXT_PUBLIC_APP_URL to the public HTTPS URL}
       # Explicitly pass through the same key from .env (Compose substitution)
       GOLF_COURSE_API_KEY: ${GOLF_COURSE_API_KEY}
+      # Guest hosting is enabled by default for this app. Set this to false on
+      # an internet-facing deployment that requires email-only host access.
+      ALLOW_GUEST_HOSTS: ${ALLOW_GUEST_HOSTS:-true}
       NODE_ENV: production
       PORT: 3000
       HOSTNAME: 0.0.0.0
