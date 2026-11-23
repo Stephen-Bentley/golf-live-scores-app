@@ -47,10 +47,16 @@ export async function POST(request: Request, { params }: Params) {
       );
     }
 
-    // Reuse existing player with same name (case-insensitive) if host already joined
+    // A host can resume their own card. A pre-added player uses their private link.
     let player = round.players.find(
       (p) => p.displayName.toLowerCase() === displayName.toLowerCase()
     );
+    if (player?.inviteCode) {
+      return NextResponse.json(
+        { error: "This player is already on the roster. Open their private player link to join." },
+        { status: 409 }
+      );
+    }
 
     if (!player) {
       if (round.players.length >= MAX_PLAYERS) {

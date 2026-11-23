@@ -1,5 +1,6 @@
 node_modules
 .next
+.next-fourball-check
 .git
 .gitignore
 *.md

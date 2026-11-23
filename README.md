@@ -1,6 +1,6 @@
 # Fairway Live
 
-Live golf scoring for casual groups and societies. Hosts set up a round from real course data, players join with a short code, enter hole scores on mobile, and everyone watches a live Stableford leaderboard. Finished rounds export to Excel.
+Live golf scoring for casual groups and societies. Hosts create nine- or 18-hole rounds, assign players to fourballs, and share a join code or private player links. Players can enter their own scores or mark the fourball. Live individual and competition standings export to Excel.
 
 ## Stack
 
@@ -56,7 +56,16 @@ docker compose down -v        # stop and delete database volume
 docker compose up -d --build  # rebuild after code changes
 ```
 
-On first start the container runs `prisma db push` automatically so the schema is created.
+The container runs `prisma migrate deploy` before starting Next.js. See the [Docker guide](./DOCKER.md) for using port 3001 or baselining a database created before the checked-in migrations.
+
+## Run a round
+
+1. Choose the course, tees, hole count, and scoring format under **Create a round**.
+2. Use **Fourballs** on the leaderboard to add playing groups, set a starting hole, and assign up to four players per group. For Betterball events, create and assign the competition pairs separately.
+3. Share the public join code or a private player link. Players can select **My score** or **Score fourball** from score entry.
+4. For a Mystery Betterball Alliance round, draw the alliances after the pairs are ready. Mark the round **Ready for export** to download the Excel workbook.
+
+See [Features](./FEATURES.md) for the competition rules and worked verification results.
 
 ---
 
@@ -99,12 +108,12 @@ DATABASE_URL="postgresql://postgres:YOUR_PASSWORD@localhost:5432/fairway_live?sc
 
 Replace `YOUR_PASSWORD` with the password for the PostgreSQL instance you are using.
 
-### 3. Install, generate Prisma client, push schema
+### 3. Install dependencies and apply migrations
 
 ```bash
 npm install
 npx prisma generate
-npx prisma db push
+npx prisma migrate deploy
 ```
 
 `npm install` also runs `prisma generate` via `postinstall`.
@@ -125,6 +134,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | `POSTGRES_PASSWORD` | Docker only | Required password for the PostgreSQL container |
 | `GOLF_COURSE_API_KEY` | No | Bearer token for GolfCourseAPI (server-only) |
 | `NEXT_PUBLIC_APP_URL` | Docker/public deployment | Public HTTPS app URL used for magic-link emails |
+| `FAIRWAY_HOST_PORT` | No | Docker host port. Defaults to `3000`. Match the port in `NEXT_PUBLIC_APP_URL` for local use. |
 | `ALLOW_GUEST_HOSTS` | No | Enables Quick start guest hosts in production; defaults to `true` in Docker Compose. Set `false` for email-only host access. |
 
 ### Database scripts
@@ -211,9 +221,12 @@ golf live scores app/
 | `DELETE` | `/api/auth/session` | Sign out |
 | `GET` | `/api/rounds` | List host’s rounds |
 | `POST` | `/api/rounds` | Create round (frozen tee snapshot + join code) |
-| `POST` | `/api/rounds/join` | Player join with code, name, handicap |
-| `PUT` | `/api/rounds/[id]/scores` | Save/correct a hole score |
-| `GET` | `/api/rounds/[id]/leaderboard` | Ranked Stableford leaderboard |
+| `POST` | `/api/rounds/join` | Join with a public code and playing details or a private invite |
+| `POST` | `/api/rounds/[id]/fourballs` | Create a playing group with a starting hole |
+| `POST/PATCH/DELETE` | `/api/rounds/[id]/players` | Manage the host roster and group assignments |
+| `PUT` | `/api/rounds/[id]/scores` | Save a single score or the fourball’s entries for a hole |
+| `POST` | `/api/rounds/[id]/alliance-draw` | Draw and save Mystery Betterball alliances |
+| `GET` | `/api/rounds/[id]/leaderboard` | Live individual and competition standings |
 | `POST` | `/api/rounds/[id]/export` | Download `.xlsx` (host, ready_for_export/closed) |
 | `GET` | `/api/golf/courses` | Search courses via GolfCourseAPI proxy |
 

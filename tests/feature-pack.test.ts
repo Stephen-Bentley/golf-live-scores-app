@@ -262,4 +262,21 @@ describe("feature: fourball better-ball", () => {
     expect(standings[0].playerCount).toBe(2);
     expect(standings[0].mode).toBe("better_ball");
   });
+
+  it("counts both players on par 3s and the better score on other holes", () => {
+    const holes = [{ ...holes18[0], par: 3 }, holes18[1]];
+    const players = [
+      { id: "a", displayName: "A", playingHandicap: 0, teamId: "pair", teamName: "Pair A" },
+      { id: "b", displayName: "B", playingHandicap: 0, teamId: "pair", teamName: "Pair A" },
+    ];
+    const scores = [
+      { playerId: "a", holeNumber: 1, grossScore: 2 },
+      { playerId: "b", holeNumber: 1, grossScore: 3 },
+      { playerId: "a", holeNumber: 2, grossScore: 4 },
+      { playerId: "b", holeNumber: 2, grossScore: 3 },
+    ].map((score) => ({ ...score, updatedAt: "2026-11-14T10:00:00Z" }));
+    const expanded = expandMemberHoleScores(holes, players, scores, { holesCount: 18 });
+    expect(buildBetterBallStandings(expanded)[0].totalPoints).toBe(6);
+    expect(buildBetterBallStandings(expanded, "stableford", "better_ball_par3_both")[0].totalPoints).toBe(8);
+  });
 });

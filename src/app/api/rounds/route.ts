@@ -14,7 +14,7 @@ export async function GET() {
     where: { hostId: session.userId },
     orderBy: { createdAt: "desc" },
     include: {
-      players: true,
+      players: { omit: { inviteCode: true } },
       _count: { select: { scores: true } },
     },
   });

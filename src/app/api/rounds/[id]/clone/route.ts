@@ -28,6 +28,7 @@ export async function POST(_request: Request, { params }: Params) {
       teeColour: source.teeColour,
       teeSetSnapshot: source.teeSetSnapshot ?? {},
       scoringFormat: source.scoringFormat,
+      teamScoring: source.teamScoring,
       holesCount: source.holesCount,
       courseRating: source.courseRating,
       slopeRating: source.slopeRating,

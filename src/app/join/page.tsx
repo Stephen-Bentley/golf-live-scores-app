@@ -7,6 +7,7 @@ import { PageShell, Topbar, Input, Button, Alert } from "@/components/ui";
 function JoinForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const inviteCode = searchParams.get("invite");
   const [joinCode, setJoinCode] = useState(
     (searchParams.get("joinCode") || "").toUpperCase()
   );
@@ -24,7 +25,7 @@ function JoinForm() {
       const res = await fetch("/api/rounds/join", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: JSON.stringify(inviteCode ? { inviteCode } : {
           joinCode,
           displayName,
           playingHandicap: Number(playingHandicap),
@@ -33,7 +34,7 @@ function JoinForm() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Join failed");
-      router.push("/dashboard");
+      router.push(inviteCode ? `/rounds/${data.round.id}/score` : "/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Join failed");
     } finally {
@@ -41,8 +42,19 @@ function JoinForm() {
     }
   }
 
+  if (inviteCode) {
+    return (
+      <form onSubmit={onSubmit} className="mt-8 space-y-4">
+        <p className="text-sm text-stone-600">Open the player scorecard assigned to this link.</p>
+        {error && <Alert tone="error">{error}</Alert>}
+        <Button type="submit" fullWidth disabled={loading}>{loading ? "Joining…" : "Open score entry"}</Button>
+      </form>
+    );
+  }
+
   return (
     <form onSubmit={onSubmit} className="mt-8 space-y-4">
+      <p className="text-sm text-stone-600">Enter the join code from your host, your display name, and your playing handicap.</p>
       <Input
         label="Join code"
         required
@@ -73,8 +85,8 @@ function JoinForm() {
         label="Team name (optional)"
         value={teamName}
         onChange={(e) => setTeamName(e.target.value)}
-        placeholder="e.g. Pair A, Fourball 1, Red team"
-        hint="Join a pair, fourball, or society team — totals show on the leaderboard"
+        placeholder="e.g. Pair A or Red team"
+        hint="Enter your competition team if your host gave you one."
       />
       {error && <Alert tone="error">{error}</Alert>}
       <Button type="submit" fullWidth disabled={loading}>
@@ -92,10 +104,6 @@ export default function JoinPage() {
         Player access
       </p>
       <h1 className="mt-1 text-2xl font-bold text-emerald-950">Join a round</h1>
-      <p className="mt-2 text-sm text-stone-600">
-        Enter the join code from your host, your display name, and playing
-        handicap for this round.
-      </p>
       <Suspense fallback={<p className="mt-8 text-sm text-stone-500">Loading…</p>}>
         <JoinForm />
       </Suspense>

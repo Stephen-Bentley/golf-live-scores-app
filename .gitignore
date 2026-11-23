@@ -15,6 +15,7 @@
 
 # next.js
 /.next/
+/.next-fourball-check/
 /out/
 
 # production

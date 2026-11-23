@@ -1,14 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { createGuestHost, setHostSessionCookie } from "@/lib/auth";
+import { createGuestHost, guestHostingEnabled, setHostSessionCookie } from "@/lib/auth";
 
 const bodySchema = z.object({
   displayName: z.string().trim().min(1).max(40),
 });
-
-export function guestHostingEnabled(env: NodeJS.ProcessEnv = process.env) {
-  return env.NODE_ENV !== "production" || env.ALLOW_GUEST_HOSTS === "true";
-}
 
 /**
  * Start hosting without email — creates a local guest host account.

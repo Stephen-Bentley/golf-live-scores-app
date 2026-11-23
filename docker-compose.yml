@@ -33,7 +33,7 @@ services:
     container_name: fairway-live-app
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${FAIRWAY_HOST_PORT:-3000}:3000"
     # Load GOLF_COURSE_API_KEY (and any other vars) from project .env
     env_file:
       - .env

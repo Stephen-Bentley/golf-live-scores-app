@@ -12,27 +12,13 @@ import {
   Input,
 } from "@/components/ui";
 import { enqueueScore } from "@/lib/offline-queue";
-
-type Hole = {
-  number: number;
-  par: number;
-  strokeIndex: number;
-  distance?: number | null;
-};
-
-type ScoreRow = {
-  holeNumber: number;
-  grossScore: number;
-  version: number;
-};
-
-function handicapStrokes(hcp: number, si: number) {
-  return Math.floor(hcp / 18) + (si <= hcp % 18 ? 1 : 0);
-}
-
-function stableford(par: number, strokes: number, gross: number) {
-  return Math.max(0, 2 + par - (gross - strokes));
-}
+import { inTeeOrder } from "@/domain/fourball";
+import {
+  getAllianceMulligans, getCompetitionHandicap, getHandicapStrokes, getHolePoints, getPlayerSummary,
+  type Hole, type ScoringFormat, type TeamScoringMode,
+} from "@/domain/scoring";
+import { FourballScoring, type PlayerScore, type ScoreRow, type ScoringGroup } from "@/components/FourballScoring";
+import { SippyCupRules } from "@/components/SippyCupRules";
 
 export default function ScoreEntryPage() {
   const params = useParams();
@@ -43,6 +29,10 @@ export default function ScoreEntryPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [holes, setHoles] = useState<Hole[]>([]);
+  const [format, setFormat] = useState<ScoringFormat>("stableford");
+  const [teamScoring, setTeamScoring] = useState<TeamScoringMode>("aggregate");
+  const [scoringGroup, setScoringGroup] = useState<ScoringGroup | null>(null);
+  const [scoreMode, setScoreMode] = useState<"self" | "fourball">("self");
   const [scores, setScores] = useState<Record<number, ScoreRow>>({});
   const scoresRef = useRef(scores);
   scoresRef.current = scores;
@@ -79,8 +69,12 @@ export default function ScoreEntryPage() {
     setStatus(data.round.status);
     setIsHost(Boolean(data.isHost));
 
-    const holeList: Hole[] = data.holes || [];
-    if (holeList.length === 18) setHoles(holeList);
+    setFormat(data.round.scoringFormat);
+    setTeamScoring(data.round.teamScoring);
+    setScoringGroup(data.scoringGroup ?? null);
+    setScoreMode("self");
+    const holeList = inTeeOrder<Hole>(data.holes ?? [], data.scoringGroup?.startingHole ?? 1);
+    setHoles(holeList);
 
     const map: Record<number, ScoreRow> = {};
     if (Array.isArray(data.myScores)) {
@@ -94,21 +88,10 @@ export default function ScoreEntryPage() {
     }
     setScores(map);
 
-    let start = 1;
-    for (let i = 1; i <= 18; i++) {
-      if (!map[i]) {
-        start = i;
-        break;
-      }
-    }
-    setCurrentHole(start);
-    if (map[start]) {
-      setInputValue(String(map[start].grossScore));
-    } else {
-      const startHole = (holeList.length === 18 ? holeList : []).find(
-        (h: { number: number; par: number }) => h.number === start
-      );
-      setInputValue(String(startHole?.par ?? 4));
+    const start = holeList.find((h) => !map[h.number]) ?? holeList[0];
+    if (start) {
+      setCurrentHole(start.number);
+      setInputValue(String(map[start.number]?.grossScore ?? start.par));
     }
   }
 
@@ -142,7 +125,7 @@ export default function ScoreEntryPage() {
               setStatus(lb.round?.status || "");
               setHostJoinName(host.displayName || host.email?.split("@")[0] || "Host");
               setNeedsHostJoin(true);
-              if (lb.holes?.length === 18) setHoles(lb.holes);
+              if (lb.holes?.length) setHoles(lb.holes);
             }
             return;
           }
@@ -192,15 +175,32 @@ export default function ScoreEntryPage() {
   }
 
   function parForHole(n: number): number {
-    const list =
-      holes.length === 18
-        ? holes
-        : Array.from({ length: 18 }, (_, i) => ({
-            number: i + 1,
-            par: 4,
-            strokeIndex: i + 1,
-          }));
-    return list.find((h) => h.number === n)?.par ?? 4;
+    return holes.find((h) => h.number === n)?.par ?? 4;
+  }
+
+  function applySavedScores(saved: PlayerScore[]) {
+    setScoringGroup((previous) => previous && ({
+      ...previous,
+      players: previous.players.map((member) => {
+        const updates = saved.filter((score) => score.playerId === member.id);
+        if (!updates.length) return member;
+        return {
+          ...member,
+          scores: [...member.scores.filter((score) =>
+            !updates.some((update) => update.holeNumber === score.holeNumber)
+          ), ...updates],
+        };
+      }),
+    }));
+    const ownUpdates = saved.filter((score) => score.playerId === playerId);
+    if (ownUpdates.length) {
+      setScores((previous) => {
+        const next = { ...previous };
+        for (const score of ownUpdates) next[score.holeNumber] = score;
+        scoresRef.current = next;
+        return next;
+      });
+    }
   }
 
   function goToHole(n: number) {
@@ -227,7 +227,7 @@ export default function ScoreEntryPage() {
       return "Round or player was not found.";
     }
     if (httpStatus === 409) {
-      return `This hole was updated elsewhere (server score: ${data.serverScore}). Adjust and save again.`;
+      return "This hole was updated elsewhere. Review the latest score and save again.";
     }
     if (httpStatus === 429) {
       return "Too many saves. Wait a moment, then try again.";
@@ -283,7 +283,7 @@ export default function ScoreEntryPage() {
           body: JSON.stringify({
             holeNumber,
             grossScore: raw,
-            clientVersion: existing?.version,
+            clientVersion: existing?.version ?? 0,
             playerId,
           }),
         });
@@ -336,14 +336,12 @@ export default function ScoreEntryPage() {
           typeof data.serverScore === "number" &&
           typeof data.serverVersion === "number"
         ) {
-          setScores((prev) => ({
-            ...prev,
-            [holeNumber]: {
-              holeNumber,
-              grossScore: data.serverScore!,
-              version: data.serverVersion!,
-            },
-          }));
+          applySavedScores([{
+            playerId,
+            holeNumber,
+            grossScore: data.serverScore,
+            version: data.serverVersion,
+          }]);
           if (holeNumber === currentHole) {
             setInputValue(String(data.serverScore));
           }
@@ -360,18 +358,15 @@ export default function ScoreEntryPage() {
       }
 
       const nextRow = {
+        playerId,
         holeNumber,
         grossScore: data.score.grossScore,
         version: data.score.version,
       };
-      setScores((prev) => {
-        const next = { ...prev, [holeNumber]: nextRow };
-        scoresRef.current = next;
-        return next;
-      });
-      setMessage(
-        `Hole ${holeNumber} saved · ${data.score.points} Stableford points`
-      );
+      applySavedScores([nextRow]);
+      setMessage(format === "stroke"
+        ? `Hole ${holeNumber} saved`
+        : `Hole ${holeNumber} saved · ${data.score.points} points`);
       setError(null);
       return true;
     } catch (err) {
@@ -388,8 +383,9 @@ export default function ScoreEntryPage() {
   }
 
   async function goNext() {
+    if (nextHole === undefined) return;
     if (closed) {
-      if (currentHole < 18) goToHole(currentHole + 1);
+      goToHole(nextHole);
       return;
     }
 
@@ -415,7 +411,7 @@ export default function ScoreEntryPage() {
       return;
     }
 
-    if (currentHole < 18) goToHole(currentHole + 1);
+    goToHole(nextHole);
   }
 
   async function retrySave() {
@@ -423,7 +419,7 @@ export default function ScoreEntryPage() {
   }
 
   const activeHoles =
-    holes.length === 18
+    holes.length
       ? holes
       : Array.from({ length: 18 }, (_, i) => ({
           number: i + 1,
@@ -433,25 +429,22 @@ export default function ScoreEntryPage() {
 
   const hole =
     activeHoles.find((h) => h.number === currentHole) || activeHoles[0];
-  const strokes = handicapStrokes(handicap, hole.strokeIndex);
+  const holeIndex = activeHoles.indexOf(hole);
+  const previousHole = activeHoles[holeIndex - 1]?.number;
+  const nextHole = activeHoles[holeIndex + 1]?.number;
+  const scoringHandicap = getCompetitionHandicap(handicap, teamScoring);
+  const mulligans = teamScoring === "fourball_alliance" ? getAllianceMulligans(handicap) : 0;
+  const strokes = getHandicapStrokes(scoringHandicap, hole.strokeIndex, activeHoles.length);
   const grossNum = inputValue === "" ? null : Number(inputValue);
   const previewPoints =
     grossNum !== null &&
     Number.isInteger(grossNum) &&
     grossNum >= 1 &&
     grossNum <= 20
-      ? stableford(hole.par, strokes, grossNum)
+      ? getHolePoints(format, hole.par, strokes, grossNum)
       : null;
 
-  const completed = Object.keys(scores).length;
-  const totalPoints = activeHoles.reduce((sum, h) => {
-    const s = scores[h.number];
-    if (!s) return sum;
-    return (
-      sum +
-      stableford(h.par, handicapStrokes(handicap, h.strokeIndex), s.grossScore)
-    );
-  }, 0);
+  const { totalPoints, totalNet, holesCompleted } = getPlayerSummary(activeHoles, handicap, Object.values(scores), { format, teamScoring });
 
   if (loading) {
     return (
@@ -524,7 +517,8 @@ export default function ScoreEntryPage() {
             {courseName || "Round"}
           </h1>
           <p className="mt-1 text-sm text-stone-600">
-            {displayName} · Hcp {handicap}
+            {displayName} · Hcp {scoringHandicap}
+            {mulligans > 0 && ` · ${mulligans} mulligan${mulligans === 1 ? "" : "s"}`}
           </p>
         </div>
         <StatusPill tone={closed ? "muted" : "success"}>
@@ -538,7 +532,51 @@ export default function ScoreEntryPage() {
         </Alert>
       )}
 
-      <Card className="mt-6">
+      {scoringGroup && playerId && (
+        <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label="Scoring mode">
+          <Button
+            variant={scoreMode === "self" ? "primary" : "secondary"}
+            aria-pressed={scoreMode === "self"}
+            disabled={saving}
+            onClick={() => {
+              if (scoreMode === "fourball") goToHole(currentHole);
+              setScoreMode("self");
+            }}
+          >
+            My score
+          </Button>
+          <Button
+            variant={scoreMode === "fourball" ? "primary" : "secondary"}
+            aria-pressed={scoreMode === "fourball"}
+            disabled={saving}
+            onClick={() => setScoreMode("fourball")}
+          >
+            Score fourball
+          </Button>
+        </div>
+      )}
+
+      {scoreMode === "fourball" && scoringGroup && playerId && (
+        <>
+          <p className="mt-3 text-sm font-medium text-stone-600">
+            {scoringGroup.name}{scoringGroup.teeTime && ` · ${scoringGroup.teeTime}`}
+          </p>
+          <FourballScoring
+            roundId={roundId}
+            playerId={playerId}
+            group={scoringGroup}
+            holes={activeHoles}
+            format={format}
+            teamScoring={teamScoring}
+            closed={closed}
+            saving={saving}
+            onSavingChange={setSaving}
+            onScoresSaved={applySavedScores}
+          />
+        </>
+      )}
+
+      <Card className={scoreMode === "fourball" ? "hidden" : "mt-6"}>
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-bold text-emerald-950">
             Hole {hole.number}
@@ -562,6 +600,7 @@ export default function ScoreEntryPage() {
             <dd className="font-semibold text-emerald-950">{strokes}</dd>
           </div>
         </dl>
+        {teamScoring === "fourball_alliance" && <SippyCupRules par={hole.par} />}
 
         <div className="mt-6 flex flex-col items-center gap-2">
           <div className="flex items-center justify-center gap-3">
@@ -634,18 +673,20 @@ export default function ScoreEntryPage() {
               <span className="text-stone-500">Nett score</span>
               <strong>{grossNum! - strokes}</strong>
             </div>
-            <div className="mt-1 flex justify-between border-t border-stone-200 pt-1">
-              <span className="text-stone-500">Stableford points</span>
-              <strong className="text-emerald-800">{previewPoints}</strong>
-            </div>
+            {format !== "stroke" && (
+              <div className="mt-1 flex justify-between border-t border-stone-200 pt-1">
+                <span className="text-stone-500">Points</span>
+                <strong className="text-emerald-800">{previewPoints}</strong>
+              </div>
+            )}
           </div>
         )}
 
         <div className="mt-6 grid grid-cols-3 gap-2">
           <Button
             variant="secondary"
-            disabled={currentHole <= 1 || saving}
-            onClick={() => goToHole(currentHole - 1)}
+            disabled={previousHole === undefined || saving}
+            onClick={() => previousHole !== undefined && goToHole(previousHole)}
           >
             ← Prev
           </Button>
@@ -657,7 +698,7 @@ export default function ScoreEntryPage() {
           </Button>
           <Button
             variant="secondary"
-            disabled={currentHole >= 18 || saving}
+            disabled={nextHole === undefined || saving}
             onClick={() => void goNext()}
           >
             {saving ? "Saving…" : "Next →"}
@@ -697,7 +738,7 @@ export default function ScoreEntryPage() {
         )}
       </Card>
 
-      <Card className="mt-4">
+      <Card className={scoreMode === "fourball" ? "hidden" : "mt-4"}>
         <h3 className="font-semibold text-emerald-950">Hole progress</h3>
         <div className="mt-3 flex flex-wrap gap-2">
           {activeHoles.map((h) => {
@@ -707,6 +748,7 @@ export default function ScoreEntryPage() {
               <button
                 key={h.number}
                 type="button"
+                disabled={saving}
                 onClick={() => goToHole(h.number)}
                 className={`min-h-10 min-w-10 rounded-lg border px-2 py-1 text-sm font-semibold ${
                   current
@@ -726,9 +768,11 @@ export default function ScoreEntryPage() {
         </div>
         <div className="mt-4 flex justify-between text-sm">
           <span className="text-stone-600">
-            Holes completed: <strong>{completed} / 18</strong>
+            Holes completed: <strong>{holesCompleted} / {activeHoles.length}</strong>
           </span>
-          <span className="font-semibold text-emerald-800">{totalPoints} pts</span>
+          <span className="font-semibold text-emerald-800">
+            {format === "stroke" ? `${totalNet} nett` : `${totalPoints} pts`}
+          </span>
         </div>
       </Card>
     </PageShell>

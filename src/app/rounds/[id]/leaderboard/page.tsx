@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { FourballManager, type Fourball, type RosterPlayer } from "@/components/FourballManager";
+import { getCompetitionHandicap, type TeamScoringMode } from "@/domain/scoring";
 import {
   PageShell,
   Topbar,
@@ -27,10 +29,12 @@ type BoardEntry = {
   lastHoleNumber: number | null;
 };
 
-type Player = {
-  id: string;
-  displayName: string;
-  playingHandicap: number;
+const teamDescriptions: Record<TeamScoringMode, string> = {
+  aggregate: "All team members’ scores are added together.",
+  better_ball: "The better score counts on each hole.",
+  better_ball_par3_both: "The better score counts on each hole. Both scores count on par 3s.",
+  fourball_alliance: "The best two scores from each fourball count on every hole.",
+  mystery_better_ball_alliance: "Two randomly drawn Betterball pairs combine their totals.",
 };
 
 function TeamCreateForm({
@@ -70,7 +74,7 @@ function TeamCreateForm({
           label="New team name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Fourball 1"
+          placeholder="Pair A"
           required
         />
       </div>
@@ -98,7 +102,10 @@ export default function LeaderboardPage() {
   const [joinCodeActive, setJoinCodeActive] = useState(true);
   const [board, setBoard] = useState<BoardEntry[]>([]);
   const [isHost, setIsHost] = useState(false);
-  const [players, setPlayers] = useState<Player[]>([])
+  const [players, setPlayers] = useState<RosterPlayer[]>([]);
+  const [fourballs, setFourballs] = useState<Fourball[]>([]);
+  const [competitionTeams, setCompetitionTeams] = useState<{ id: string; name: string }[]>([]);
+  const [holes, setHoles] = useState<number[]>([]);
   const [teams, setTeams] = useState<
     Array<{
       rank: number;
@@ -112,7 +119,10 @@ export default function LeaderboardPage() {
       mode?: string;
     }>
   >([])
-  const [teamScoring, setTeamScoring] = useState("aggregate");
+  const [teamScoring, setTeamScoring] = useState<TeamScoringMode>("aggregate");
+  const [alliancesDrawn, setAlliancesDrawn] = useState(false);
+  const [drawing, setDrawing] = useState(false);
+  const [drawError, setDrawError] = useState<string | null>(null);
   const [connection, setConnection] = useState("Live");
   const [shareCopied, setShareCopied] = useState<"link" | "code" | null>(null);
 
@@ -134,8 +144,12 @@ export default function LeaderboardPage() {
       setBoard(data.leaderboard || []);
       setIsHost(Boolean(data.isHost));
       setPlayers(data.players || []);
+      setFourballs(data.fourballs || []);
+      setCompetitionTeams(data.competitionTeams || []);
+      setHoles((data.holes ?? []).map((hole: { number: number }) => hole.number).sort((a: number, b: number) => a - b));
       setTeams(data.teams || []);
       setTeamScoring(data.round?.teamScoring || "aggregate");
+      setAlliancesDrawn(Boolean(data.round?.alliancesDrawn));
       if (!correctPlayerId && data.players?.length) {
         setCorrectPlayerId(data.players[0].id);
       }
@@ -173,6 +187,21 @@ export default function LeaderboardPage() {
       if (fallback) clearInterval(fallback);
     };
   }, [load, roundId]);
+
+  async function drawAlliances() {
+    setDrawing(true);
+    setDrawError(null);
+    try {
+      const res = await fetch(`/api/rounds/${roundId}/alliance-draw`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not draw alliances.");
+      await load();
+    } catch (error) {
+      setDrawError(error instanceof Error ? error.message : "Could not draw alliances.");
+    } finally {
+      setDrawing(false);
+    }
+  }
 
   async function setRoundStatus(next: string) {
     setMessage(null);
@@ -457,12 +486,12 @@ export default function LeaderboardPage() {
                     <td className="px-4 py-3 text-stone-600">
                       {row.teamName || "—"}
                     </td>
-                    <td className="px-4 py-3">{row.playingHandicap}</td>
+                    <td className="px-4 py-3">{getCompetitionHandicap(row.playingHandicap, teamScoring)}</td>
                     <td className="px-4 py-3">
                       {row.isComplete ? (
                         <StatusPill tone="success">Complete</StatusPill>
                       ) : (
-                        `${row.holesCompleted}/18`
+                        `${row.holesCompleted}/${holes.length}`
                       )}
                     </td>
                     <td className="px-4 py-3 tabular-nums">
@@ -494,11 +523,15 @@ export default function LeaderboardPage() {
       {teams.length > 0 && (
         <Card className="mt-6 overflow-hidden p-0">
           <div className="border-b border-stone-200 bg-stone-50 px-4 py-3">
-            <h2 className="font-semibold text-emerald-950">Team standings</h2>
+            <h2 className="font-semibold text-emerald-950">
+              {teamScoring === "mystery_better_ball_alliance"
+                ? (alliancesDrawn ? "Alliance standings" : "Betterball pair standings")
+                : teamScoring === "fourball_alliance" ? "Fourball standings" : "Team standings"}
+            </h2>
             <p className="text-xs text-stone-500">
-              {teamScoring === "better_ball"
-                ? "Fourball better-ball — best member score counts on each hole"
-                : "Society / pairs total — all member scores added together"}
+              {teamScoring === "mystery_better_ball_alliance" && !alliancesDrawn
+                ? "Pair totals are displayed until the host draws the alliances."
+                : teamDescriptions[teamScoring]}
             </p>
           </div>
           <div className="overflow-x-auto">
@@ -622,14 +655,41 @@ export default function LeaderboardPage() {
             </Button>
           </div>
 
-          <div className="border-t border-stone-200 pt-6">
-            <h3 className="font-semibold text-emerald-950">Teams</h3>
-            <p className="mt-1 text-sm text-stone-600">
-              Players join with a team name, or create one here for pairs /
-              fourballs / society groups.
-            </p>
-            <TeamCreateForm roundId={roundId} onCreated={() => void load()} />
-          </div>
+          {teamScoring !== "fourball_alliance" && (
+            <div className="border-t border-stone-200 pt-6">
+              <h3 className="font-semibold text-emerald-950">Competition teams</h3>
+              <p className="mt-1 text-sm text-stone-600">
+                Create the competition teams here, such as Pair A and Pair B for Betterball.
+              </p>
+              <TeamCreateForm roundId={roundId} onCreated={() => void load()} />
+            </div>
+          )}
+
+          <FourballManager
+            roundId={roundId}
+            fourballs={fourballs}
+            players={players}
+            teams={teamScoring === "fourball_alliance" ? [] : competitionTeams}
+            holes={holes}
+            locked={status === "closed" || status === "archived"}
+            canInvite={joinCodeActive}
+            onSaved={load}
+          />
+
+          {teamScoring === "mystery_better_ball_alliance" && (
+            <div className="space-y-3 border-t border-stone-200 pt-6">
+              <h3 className="font-semibold text-emerald-950">Mystery alliance draw</h3>
+              <p className="text-sm text-stone-600">
+                {alliancesDrawn ? "The drawn alliances are on the leaderboard." : "Draw when you’re ready to reveal the alliances."}
+              </p>
+              {!alliancesDrawn && (
+                <Button onClick={() => void drawAlliances()} disabled={drawing || status === "archived"}>
+                  {drawing ? "Drawing…" : "Draw mystery alliances"}
+                </Button>
+              )}
+              {drawError && <Alert tone="error">{drawError}</Alert>}
+            </div>
+          )}
 
           <div className="border-t border-stone-200 pt-6">
             <h3 className="font-semibold text-emerald-950">Correct a score</h3>
@@ -655,9 +715,9 @@ export default function LeaderboardPage() {
                   onChange={(e) => setCorrectHole(Number(e.target.value))}
                   className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2"
                 >
-                  {Array.from({ length: 18 }, (_, i) => (
-                    <option key={i + 1} value={i + 1}>
-                      Hole {i + 1}
+                  {holes.map((hole) => (
+                    <option key={hole} value={hole}>
+                      Hole {hole}
                     </option>
                   ))}
                 </select>

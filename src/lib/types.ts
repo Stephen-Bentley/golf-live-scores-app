@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TEAM_SCORING_MODES } from "@/domain/scoring";
 
 export const playingHandicapSchema = z.number().int().min(0).max(54);
 export const grossScoreSchema = z.number().int().min(1).max(20);
@@ -29,7 +30,7 @@ export const createRoundSchema = z.object({
   holesCount: z.union([z.literal(9), z.literal(18)]).optional().default(18),
   courseRating: z.number().optional().nullable(),
   slopeRating: z.number().int().optional().nullable(),
-  teamScoring: z.enum(["aggregate", "better_ball"]).optional().default("aggregate"),
+  teamScoring: z.enum(TEAM_SCORING_MODES).optional().default("aggregate"),
 });
 
 export const joinRoundSchema = z.object({

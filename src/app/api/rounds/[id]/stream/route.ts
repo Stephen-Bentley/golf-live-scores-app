@@ -1,15 +1,8 @@
 import { prisma } from "@/lib/db";
 import { getHostSession, getPlayerSession } from "@/lib/auth";
 import { acquireStream, releaseStream } from "@/lib/stream-limit";
-import {
-  buildLeaderboard,
-  buildTeamStandings,
-  buildBetterBallStandings,
-  expandMemberHoleScores,
-  type Hole,
-  type ScoringFormat,
-  type TeamScoringMode,
-} from "@/domain/scoring";
+import type { Hole } from "@/domain/scoring";
+import { buildRoundResults } from "@/lib/round-results";
 
 type Params = { params: Promise<{ id: string }> };
 const STREAM_MAX_AGE_MS = 5 * 60_000;
@@ -48,9 +41,8 @@ export async function GET(request: Request, { params }: Params) {
         const round = await prisma.round.findUnique({
           where: { id },
           include: {
-            players: { include: { team: true } },
+            players: { include: { team: true, fourball: true }, omit: { inviteCode: true } },
             scores: true,
-            teams: true,
           },
         });
         if (!round) {
@@ -67,48 +59,7 @@ export async function GET(request: Request, { params }: Params) {
           return;
         }
         const snapshot = round.teeSetSnapshot as { holes: Hole[] };
-        const format = round.scoringFormat as ScoringFormat;
-        const board = buildLeaderboard(
-          snapshot.holes,
-          round.players.map((p) => ({
-            id: p.id,
-            displayName: p.displayName,
-            playingHandicap: p.playingHandicap,
-            teamId: p.teamId,
-            teamName: p.team?.name ?? null,
-          })),
-          round.scores.map((s) => ({
-            playerId: s.playerId,
-            holeNumber: s.holeNumber,
-            grossScore: s.grossScore,
-            updatedAt: s.updatedAt.toISOString(),
-          })),
-          { format, holesCount: round.holesCount }
-        );
-        const teamMode = (round.teamScoring || "aggregate") as TeamScoringMode;
-        const playerInput = round.players.map((p) => ({
-          id: p.id,
-          displayName: p.displayName,
-          playingHandicap: p.playingHandicap,
-          teamId: p.teamId,
-          teamName: p.team?.name ?? null,
-        }));
-        const scoreRows = round.scores.map((s) => ({
-          playerId: s.playerId,
-          holeNumber: s.holeNumber,
-          grossScore: s.grossScore,
-          updatedAt: s.updatedAt.toISOString(),
-        }));
-        const teams =
-          teamMode === "better_ball"
-            ? buildBetterBallStandings(
-                expandMemberHoleScores(snapshot.holes, playerInput, scoreRows, {
-                  format,
-                  holesCount: round.holesCount,
-                }),
-                format
-              )
-            : buildTeamStandings(board, format, "aggregate");
+        const { leaderboard, teams } = buildRoundResults(round, snapshot.holes);
         send({
           type: "leaderboard",
           at: new Date().toISOString(),
@@ -120,7 +71,7 @@ export async function GET(request: Request, { params }: Params) {
             teamScoring: round.teamScoring,
             joinCode: round.joinCode,
           },
-          leaderboard: board,
+          leaderboard,
           teams,
         });
         } finally {

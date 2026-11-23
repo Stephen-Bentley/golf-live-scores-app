@@ -97,4 +97,20 @@ describe("flow: excel export", () => {
     expect(first).toBe("Test Links");
     expect(holes18).toHaveLength(18);
   });
+
+  it("exports capped hole strokes and the fourball standings for Sippy Cup rounds", async () => {
+    const round = sampleExportRound();
+    round.players[0].playingHandicap = 30;
+    round.teamScoring = "fourball_alliance";
+    round.standings = [{
+      rank: 1, teamId: "1", teamName: "Fourball 1",
+      playerCount: 2, memberNames: ["Alice", "Bob"],
+      totalPoints: 13, totalGross: 11, totalNet: 9, mode: "fourball_alliance",
+    }];
+    const workbook = new ExcelJS.Workbook();
+    const buffer = await generateRoundWorkbook(round);
+    await workbook.xlsx.load(buffer as unknown as ExcelJS.Buffer);
+    expect(workbook.getWorksheet("Scorecards")?.getCell("D3").value).toBe(1);
+    expect(workbook.getWorksheet("Team standings")?.getCell("D2").value).toBe(13);
+  });
 });

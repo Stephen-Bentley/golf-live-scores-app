@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import type { TeamScoringMode } from "@/domain/scoring";
 import {
   PageShell,
   Topbar,
@@ -126,7 +127,7 @@ export default function NewRoundPage() {
     "stableford" | "stroke" | "modified_stableford"
   >("stableford");
   const [holesCount, setHolesCount] = useState<9 | 18>(18);
-  const [teamScoring, setTeamScoring] = useState<"aggregate" | "better_ball">(
+  const [teamScoring, setTeamScoring] = useState<TeamScoringMode>(
     "aggregate"
   );
 
@@ -468,15 +469,24 @@ export default function NewRoundPage() {
               <select
                 value={teamScoring}
                 onChange={(e) =>
-                  setTeamScoring(e.target.value as "aggregate" | "better_ball")
+                  setTeamScoring(e.target.value as TeamScoringMode)
                 }
                 className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2"
               >
                 <option value="aggregate">
-                  Society / pairs total (sum all members)
+                  Individual scores and optional team totals
                 </option>
                 <option value="better_ball">
-                  Fourball better-ball (best score each hole)
+                  Betterball (best score each hole)
+                </option>
+                <option value="better_ball_par3_both">
+                  Betterball (both scores count on par 3s)
+                </option>
+                <option value="fourball_alliance">
+                  Mystery Sippy Cup 4Ball Alliance (best two scores per hole)
+                </option>
+                <option value="mystery_better_ball_alliance">
+                  Mystery Betterball Alliance (two pairs drawn together)
                 </option>
               </select>
             </label>

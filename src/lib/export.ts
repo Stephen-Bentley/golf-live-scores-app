@@ -6,9 +6,13 @@
 import ExcelJS from "exceljs";
 import {
   buildLeaderboard,
+  getCompetitionHandicap,
   getHandicapStrokes,
-  getStablefordPoints,
+  getHolePoints,
   type Hole,
+  type ScoringFormat,
+  type TeamScoringMode,
+  type TeamStanding,
 } from "@/domain/scoring";
 
 export type ExportPlayer = {
@@ -32,6 +36,9 @@ export type ExportRound = {
   teeColour: string;
   joinCode: string;
   status: string;
+  scoringFormat?: ScoringFormat;
+  teamScoring?: TeamScoringMode;
+  standings?: TeamStanding[];
   teeSetSnapshot: {
     name: string;
     colour: string;
@@ -59,14 +66,17 @@ function safeSpreadsheetText(value: string): string {
 function holeResultsForPlayer(
   holes: Hole[],
   player: ExportPlayer,
-  scores: ExportScore[]
+  scores: ExportScore[],
+  format: ScoringFormat,
+  teamScoring?: TeamScoringMode
 ): HoleResult[] {
   const sorted = [...holes].sort((a, b) => a.number - b.number);
   return sorted.map((hole) => {
     const entry = scores.find(
       (s) => s.playerId === player.id && s.holeNumber === hole.number
     );
-    const hs = getHandicapStrokes(player.playingHandicap, hole.strokeIndex);
+    const handicap = getCompetitionHandicap(player.playingHandicap, teamScoring);
+    const hs = getHandicapStrokes(handicap, hole.strokeIndex, holes.length);
     if (!entry) {
       return {
         holeNumber: hole.number,
@@ -86,7 +96,7 @@ function holeResultsForPlayer(
       hcpStrokes: hs,
       gross,
       nett: gross - hs,
-      points: getStablefordPoints(hole.par, hs, gross),
+      points: getHolePoints(format, hole.par, hs, gross),
     };
   });
 }
@@ -101,7 +111,8 @@ export async function generateRoundWorkbook(
   const holes = [...round.teeSetSnapshot.holes].sort(
     (a, b) => a.number - b.number
   );
-  const board = buildLeaderboard(holes, round.players, round.scores);
+  const format = round.scoringFormat ?? "stableford";
+  const board = buildLeaderboard(holes, round.players, round.scores, { format, teamScoring: round.teamScoring });
 
   // Order players by leaderboard rank for consistent sheets
   const playersByRank = board
@@ -122,7 +133,7 @@ export async function generateRoundWorkbook(
     { header: "Completion", key: "completion", width: 14 },
     { header: "Gross Total", key: "gross", width: 12 },
     { header: "Nett Total", key: "nett", width: 12 },
-    { header: "Stableford Points", key: "points", width: 18 },
+    { header: format === "stableford" ? "Stableford Points" : "Points", key: "points", width: 18 },
   ];
   for (const e of board) {
     lb.addRow({
@@ -149,15 +160,15 @@ export async function generateRoundWorkbook(
     "Nett total",
     "Points total",
   ];
-  for (let i = 1; i <= 18; i++) {
-    matrixHeader.push(`H${i} Gross`, `H${i} Nett`, `H${i} Pts`);
+  for (const { number } of holes) {
+    matrixHeader.push(`H${number} Gross`, `H${number} Nett`, `H${number} Pts`);
   }
   matrix.addRow(matrixHeader);
   styleHeader(matrix);
 
   for (const player of orderedPlayers) {
     const entry = board.find((b) => b.playerId === player.id);
-    const results = holeResultsForPlayer(holes, player, round.scores);
+    const results = holeResultsForPlayer(holes, player, round.scores, format, round.teamScoring);
     const row: (string | number)[] = [
       safeSpreadsheetText(player.displayName),
       player.playingHandicap,
@@ -183,7 +194,7 @@ export async function generateRoundWorkbook(
 
   for (const player of orderedPlayers) {
     const entry = board.find((b) => b.playerId === player.id);
-    const results = holeResultsForPlayer(holes, player, round.scores);
+    const results = holeResultsForPlayer(holes, player, round.scores, format, round.teamScoring);
 
     // Player header
     cards.getCell(rowNum, 1).value = safeSpreadsheetText(player.displayName);
@@ -273,16 +284,40 @@ export async function generateRoundWorkbook(
     setup.addRow([h.number, h.par, h.strokeIndex, h.distance ?? ""]);
   }
   setup.addRow([]);
-  setup.addRow([
-    "Scoring rules",
-    "Stableford: max(0, 2 + par - nett) where nett = gross - handicap strokes",
-  ]);
+  setup.addRow(["Scoring format", format.replaceAll("_", " ")]);
+  if (round.teamScoring === "fourball_alliance") {
+    setup.addRow(["Scoring handicap", "Playing handicap capped at 18"]);
+  }
   setup.addRow([
     "Handicap allocation",
-    "floor(hcp/18) on every hole + 1 on holes with stroke index <= hcp % 18",
+    `floor(hcp/${holes.length}) on every hole + 1 on holes with stroke index <= hcp % ${holes.length}`,
   ]);
   setup.addRow(["Retention", "Default retention 12 months"]);
   setup.columns = [{ width: 20 }, { width: 70 }, { width: 14 }, { width: 12 }];
+
+  if (round.standings?.length) {
+    const standings = workbook.addWorksheet("Team standings");
+    standings.columns = [
+      { header: "Rank", key: "rank", width: 8 },
+      { header: "Team", key: "team", width: 28 },
+      { header: "Players", key: "players", width: 58 },
+      { header: "Points", key: "points", width: 12 },
+      { header: "Gross", key: "gross", width: 12 },
+      { header: "Nett", key: "nett", width: 12 },
+    ];
+    for (const team of round.standings) {
+      standings.addRow({
+        rank: team.rank,
+        team: safeSpreadsheetText(team.teamName),
+        players: safeSpreadsheetText(team.memberNames.join(", ")),
+        points: team.totalPoints,
+        gross: team.totalGross,
+        nett: team.totalNet,
+      });
+    }
+    styleHeader(standings);
+    standings.views = [{ state: "frozen", ySplit: 1 }];
+  }
 
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);

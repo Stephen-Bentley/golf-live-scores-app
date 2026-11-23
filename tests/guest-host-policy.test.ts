@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { guestHostingEnabled } from "@/app/api/auth/guest-host/route";
+import { guestHostingEnabled } from "@/lib/auth";
 
 describe("guest host policy", () => {
   it("allows temporary hosts outside production", () => {

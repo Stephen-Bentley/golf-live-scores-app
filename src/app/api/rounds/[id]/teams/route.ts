@@ -16,7 +16,7 @@ export async function GET(_request: Request, { params }: Params) {
   }
   const teams = await prisma.team.findMany({
     where: { roundId: id },
-    include: { players: true },
+    include: { players: { omit: { inviteCode: true } } },
   });
   return NextResponse.json({ teams });
 }

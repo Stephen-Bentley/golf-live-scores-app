@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { generateRoundWorkbook } from "@/lib/export";
-import type { Hole } from "@/domain/scoring";
+import type { Hole, TeamScoringMode } from "@/domain/scoring";
+import { buildRoundResults } from "@/lib/round-results";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -18,7 +19,7 @@ export async function POST(_request: Request, { params }: Params) {
   const round = await prisma.round.findUnique({
     where: { id: roundId },
     include: {
-      players: true,
+      players: { include: { team: true, fourball: true }, omit: { inviteCode: true } },
       scores: true,
     },
   });
@@ -70,6 +71,9 @@ export async function POST(_request: Request, { params }: Params) {
     teeColour: round.teeColour,
     joinCode: round.joinCode,
     status: round.status,
+    scoringFormat: round.scoringFormat,
+    teamScoring: round.teamScoring as TeamScoringMode,
+    standings: buildRoundResults(round, snapshot.holes).teams,
     teeSetSnapshot: snapshot,
     players: round.players.map((p) => ({
       id: p.id,

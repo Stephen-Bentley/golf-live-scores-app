@@ -1,15 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getHostSession, getPlayerSession } from "@/lib/auth";
-import {
-  buildLeaderboard,
-  buildTeamStandings,
-  buildBetterBallStandings,
-  expandMemberHoleScores,
-  type Hole,
-  type ScoringFormat,
-  type TeamScoringMode,
-} from "@/domain/scoring";
+import { canScoreFor } from "@/domain/fourball";
+import type { Hole } from "@/domain/scoring";
+import { buildRoundResults } from "@/lib/round-results";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -24,9 +18,10 @@ export async function GET(_request: Request, { params }: Params) {
   const round = await prisma.round.findUnique({
     where: { id },
     include: {
-      players: { include: { team: true } },
+      players: { include: { team: true, fourball: true } },
       scores: true,
       teams: true,
+      fourballs: { orderBy: [{ startingHole: "asc" }, { teeTime: "asc" }, { name: "asc" }] },
     },
   });
 
@@ -35,12 +30,11 @@ export async function GET(_request: Request, { params }: Params) {
   }
 
   const isHost = Boolean(host && host.userId === round.hostId);
-  const isPlayer =
-    Boolean(player) &&
-    player!.roundId === round.id &&
-    round.players.some((p) => p.id === player!.playerId);
+  const scoringPlayer = player?.roundId === round.id
+    ? round.players.find((p) => p.id === player.playerId)
+    : undefined;
 
-  if (!isHost && !isPlayer) {
+  if (!isHost && !scoringPlayer) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -50,58 +44,27 @@ export async function GET(_request: Request, { params }: Params) {
     colour: string;
   };
 
-  const format = round.scoringFormat as ScoringFormat;
-  const board = buildLeaderboard(
-    snapshot.holes,
-    round.players.map((p) => ({
-      id: p.id,
-      displayName: p.displayName,
-      playingHandicap: p.playingHandicap,
-      teamId: p.teamId,
-      teamName: p.team?.name ?? null,
-    })),
-    round.scores.map((s) => ({
-      playerId: s.playerId,
+  const { leaderboard, teams } = buildRoundResults(round, snapshot.holes);
+
+  const scoresFor = (playerId: string) => round.scores
+    .filter((s) => s.playerId === playerId)
+    .map((s) => ({
       holeNumber: s.holeNumber,
       grossScore: s.grossScore,
-      updatedAt: s.updatedAt.toISOString(),
-    })),
-    { format, holesCount: round.holesCount }
-  );
-  const teamMode = (round.teamScoring || "aggregate") as TeamScoringMode;
-  const playerBoardInput = round.players.map((p) => ({
-    id: p.id,
-    displayName: p.displayName,
-    playingHandicap: p.playingHandicap,
-    teamId: p.teamId,
-    teamName: p.team?.name ?? null,
-  }));
-  const scoreRows = round.scores.map((s) => ({
-    playerId: s.playerId,
-    holeNumber: s.holeNumber,
-    grossScore: s.grossScore,
-    updatedAt: s.updatedAt.toISOString(),
-  }));
-  const teams =
-    teamMode === "better_ball"
-      ? buildBetterBallStandings(
-          expandMemberHoleScores(snapshot.holes, playerBoardInput, scoreRows, {
-            format,
-            holesCount: round.holesCount,
-          }),
-          format
-        )
-      : buildTeamStandings(board, format, "aggregate");
-
-  const myScores = player
-    ? round.scores
-        .filter((s) => s.playerId === player.playerId)
-        .map((s) => ({
-          holeNumber: s.holeNumber,
-          grossScore: s.grossScore,
-          version: s.version,
-        }))
-    : [];
+      version: s.version,
+    }));
+  const myScores = scoringPlayer ? scoresFor(scoringPlayer.id) : [];
+  const myFourball = round.fourballs.find((group) => group.id === scoringPlayer?.fourballId);
+  const scoringGroup = scoringPlayer && myFourball
+    ? {
+        ...myFourball,
+        players: round.players
+          .filter((p) => canScoreFor(scoringPlayer, p))
+          .map(({ id, displayName, playingHandicap }) => ({
+            id, displayName, playingHandicap, scores: scoresFor(id),
+          })),
+      }
+    : null;
 
   return NextResponse.json({
     round: {
@@ -115,20 +78,28 @@ export async function GET(_request: Request, { params }: Params) {
       scoringFormat: round.scoringFormat,
       holesCount: round.holesCount,
       teamScoring: round.teamScoring,
+      alliancesDrawn: Boolean(round.allianceDraw),
       courseRating: round.courseRating,
       slopeRating: round.slopeRating,
     },
     holes: snapshot.holes,
-    leaderboard: board,
+    leaderboard,
     teams,
     myScores,
+    scoringGroup,
     isHost,
+    ...(isHost ? {
+      fourballs: round.fourballs,
+      competitionTeams: round.teams.map(({ id, name }) => ({ id, name })),
+    } : {}),
     players: round.players.map((p) => ({
       id: p.id,
       displayName: p.displayName,
       playingHandicap: p.playingHandicap,
       teamId: p.teamId,
       teamName: p.team?.name ?? null,
+      fourballId: p.fourballId,
+      ...(isHost ? { inviteCode: p.inviteCode } : {}),
     })),
   });
 }

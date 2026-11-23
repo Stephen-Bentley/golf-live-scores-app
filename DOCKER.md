@@ -30,6 +30,7 @@ development-only Compose override when running the app with `npm run dev`.
 |----------|---------|
 | `POSTGRES_PASSWORD` | Required password for the PostgreSQL container. Use a strong, unique value. |
 | `NEXT_PUBLIC_APP_URL` | Required public HTTPS URL for deployed environments. |
+| `FAIRWAY_HOST_PORT` | Optional host port. Defaults to `3000`. The container listens on port `3000`. |
 | `GOLF_COURSE_API_KEY` | Optional server-only key for course search and import. |
 | `ALLOW_GUEST_HOSTS` | Optional. Defaults to `true` in Compose; set `false` to require email-only host access. |
 
@@ -46,7 +47,7 @@ your public deployment requires a verified host identity, set
 |------|---------|
 | `Dockerfile` | Multi-stage build of the Next.js app |
 | `docker-compose.yml` | `db` (Postgres 16) + `app` services |
-| `docker/entrypoint.sh` | Waits for DB, runs `prisma db push`, starts the app |
+| `docker/entrypoint.sh` | Applies pending Prisma migrations, then starts Next.js |
 | `.dockerignore` | Keeps the image build lean |
 
 ## Commands
@@ -71,9 +72,15 @@ docker compose down -v         # stop and wipe the database volume
 
 ## Troubleshooting
 
-**Port 3000 already in use**
-Stop the other process, or change the left-hand side of the app port mapping in
-`docker-compose.yml` (for example, `"3001:3000"`).
+### Use port 3001
+
+Run this PowerShell command from the project folder after configuring the database password.
+
+```powershell
+$env:FAIRWAY_HOST_PORT='3001'; $env:NEXT_PUBLIC_APP_URL='http://localhost:3001'; docker compose up -d --build
+```
+
+Open [http://localhost:3001](http://localhost:3001).
 
 **App keeps restarting**  
 Check logs: `docker compose logs app`. Usually the DB was not healthy yet or `DATABASE_URL` is wrong.
@@ -85,17 +92,18 @@ Rebuild so the image includes the new Prisma schema:
 docker compose up -d --build
 ```
 
-The entrypoint runs `prisma migrate deploy` on every start, so only reviewed, checked-in
-migrations are applied. It will not use `db push` or accept destructive schema changes.
+The entrypoint runs `prisma migrate deploy` on every start to apply the checked-in migrations.
 
 ### Existing database baseline
 
-This release introduces the first checked-in migration. If a database was created by an
-earlier version using `prisma db push`, take a backup and mark the baseline as applied
-once before deploying this image:
+If startup reports `P3005` for a database originally created with `prisma db push`, back it up and compare it against the schema represented by the initial migration. With PostgreSQL running and the app image built, run this read-only check from PowerShell.
 
-```sh
-npx prisma migrate resolve --applied 20261122120000_initial_schema
+```powershell
+git show 0df5d6e:prisma/schema.prisma | docker compose run --rm -T --no-deps --entrypoint sh app -c 'cat > /tmp/fairway-baseline.prisma && npx prisma migrate diff --from-schema-datasource /tmp/fairway-baseline.prisma --to-schema-datamodel /tmp/fairway-baseline.prisma --exit-code'
 ```
 
-Run this only after confirming the existing database matches `prisma/schema.prisma`.
+If the output says **No difference detected**, record the initial migration and restart the app. Startup applies the remaining migrations, including `20261123120000_add_fourballs`. If the check shows a difference, inspect it before recording a baseline.
+
+```powershell
+docker compose stop app; if ($LASTEXITCODE -eq 0) { docker compose run --rm -T --no-deps --entrypoint npx app prisma migrate resolve --applied 20261122120000_initial_schema; if ($LASTEXITCODE -eq 0) { docker compose up -d --no-deps --no-build app } }
+```

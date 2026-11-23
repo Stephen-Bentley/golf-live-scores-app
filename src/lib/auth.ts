@@ -79,6 +79,10 @@ export async function consumeMagicLink(
   return { userId: user.id, email: user.email, role: "host" };
 }
 
+export function guestHostingEnabled(env: NodeJS.ProcessEnv = process.env) {
+  return env.NODE_ENV !== "production" || env.ALLOW_GUEST_HOSTS === "true";
+}
+
 /** Create a host account without email (local/demo friendly). */
 export async function createGuestHost(displayName: string): Promise<HostSession> {
   const slug = displayName

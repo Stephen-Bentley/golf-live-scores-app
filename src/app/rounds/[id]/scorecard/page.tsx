@@ -11,9 +11,11 @@ import {
   StatusPill,
 } from "@/components/ui";
 import {
+  getCompetitionHandicap,
   getHandicapStrokes,
   getHolePoints,
   type ScoringFormat,
+  type TeamScoringMode,
 } from "@/domain/scoring";
 
 type Hole = {
@@ -71,6 +73,7 @@ export default function ScorecardPage() {
         if (cancelled) return;
 
         const format = (lb.round.scoringFormat || "stableford") as ScoringFormat;
+        const handicap = getCompetitionHandicap(player.playingHandicap, lb.round.teamScoring as TeamScoringMode);
         const holesCount = lb.round.holesCount || 18;
         const holes: Hole[] = lb.holes || [];
         const scoreMap = new Map<number, { grossScore: number }>();
@@ -88,7 +91,7 @@ export default function ScorecardPage() {
         const built: Row[] = holes.map((h) => {
           const sc = scoreMap.get(h.number);
           const hs = getHandicapStrokes(
-            player.playingHandicap,
+            handicap,
             h.strokeIndex,
             holesCount
           );
@@ -126,7 +129,7 @@ export default function ScorecardPage() {
         setMeta({
           name: player.displayName,
           course: lb.round.courseName,
-          hcp: player.playingHandicap,
+          hcp: handicap,
           format,
           points,
           gross,

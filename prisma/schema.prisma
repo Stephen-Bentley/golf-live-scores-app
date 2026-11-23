@@ -100,6 +100,7 @@ model Round {
   scoringFormat  ScoringFormat @default(stableford)
   holesCount     Int           @default(18)
   teamScoring    String        @default("aggregate")
+  allianceDraw   Json?
   courseRating   Float?
   slopeRating    Int?
   templateFromId String?
@@ -112,6 +113,7 @@ model Round {
   exports        ExportJob[]
   holeNotes      HoleNote[]
   teams          Team[]
+  fourballs      Fourball[]
 
   @@index([hostId])
   @@index([status])
@@ -129,22 +131,38 @@ model Team {
   @@index([roundId])
 }
 
+model Fourball {
+  id           String   @id @default(cuid())
+  roundId      String
+  name         String
+  teeTime      String?
+  startingHole Int      @default(1)
+  round        Round    @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  players      Player[]
+
+  @@unique([roundId, name])
+}
+
 model Player {
   id              String     @id @default(cuid())
   roundId         String
   teamId          String?
+  fourballId      String?
+  inviteCode      String?    @unique
   displayName     String
   playingHandicap Int
   memberRole      MemberRole @default(player)
   joinedAt        DateTime   @default(now())
   round           Round      @relation(fields: [roundId], references: [id], onDelete: Cascade)
   team            Team?      @relation(fields: [teamId], references: [id])
+  fourball        Fourball?  @relation(fields: [fourballId], references: [id])
   scores          ScoreEntry[]
   holeNotes       HoleNote[]
 
   @@unique([roundId, displayName])
   @@index([roundId])
   @@index([teamId])
+  @@index([fourballId])
 }
 
 model ScoreEntry {

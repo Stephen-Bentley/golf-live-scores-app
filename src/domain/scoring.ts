@@ -3,6 +3,25 @@
  */
 
 export type ScoringFormat = "stableford" | "stroke" | "modified_stableford";
+export const TEAM_SCORING_MODES = [
+  "aggregate", "better_ball", "better_ball_par3_both", "fourball_alliance", "mystery_better_ball_alliance",
+] as const;
+export type TeamScoringMode = (typeof TEAM_SCORING_MODES)[number];
+
+export function requiresTwoPlayerPair(mode: string) {
+  return mode === "better_ball_par3_both" || mode === "mystery_better_ball_alliance";
+}
+
+export function getCompetitionHandicap(playingHandicap: number, mode?: TeamScoringMode) {
+  return mode === "fourball_alliance" ? Math.min(playingHandicap, 18) : playingHandicap;
+}
+
+export function getAllianceMulligans(playingHandicap: number) {
+  if (playingHandicap < 19) return 0;
+  if (playingHandicap < 24) return 1;
+  if (playingHandicap < 29) return 2;
+  return playingHandicap < 35 ? 3 : 4;
+}
 
 export type Hole = {
   number: number;
@@ -95,10 +114,11 @@ export function getPlayerSummary(
   holes: Hole[],
   playingHandicap: number,
   scores: ScoreEntry[],
-  options: { format?: ScoringFormat; holesCount?: number } = {}
+  options: { format?: ScoringFormat; holesCount?: number; teamScoring?: TeamScoringMode } = {}
 ): PlayerSummary {
   const format = options.format ?? "stableford";
   const holesCount = options.holesCount ?? holes.length;
+  const scoringHandicap = getCompetitionHandicap(playingHandicap, options.teamScoring);
   let totalPoints = 0;
   let holesCompleted = 0;
   let totalGross = 0;
@@ -110,7 +130,7 @@ export function getPlayerSummary(
     const grossScore = scoreEntry?.grossScore ?? null;
     if (grossScore !== null && grossScore !== undefined) {
       const handicapStrokes = getHandicapStrokes(
-        playingHandicap,
+        scoringHandicap,
         hole.strokeIndex,
         holesCount
       );
@@ -169,7 +189,7 @@ export function buildLeaderboard(
   holes: Hole[],
   players: PlayerForBoard[],
   scores: StoredScore[],
-  options: { format?: ScoringFormat; holesCount?: number } = {}
+  options: { format?: ScoringFormat; holesCount?: number; teamScoring?: TeamScoringMode } = {}
 ): LeaderboardEntry[] {
   const format = options.format ?? "stableford";
   const holesCount = options.holesCount ?? holes.length;
@@ -181,6 +201,7 @@ export function buildLeaderboard(
     const summary = getPlayerSummary(holes, player.playingHandicap, playerScores, {
       format,
       holesCount,
+      teamScoring: options.teamScoring,
     });
     const playerScoreRows = scores.filter((s) => s.playerId === player.id);
     const lastUpdate =
@@ -241,9 +262,6 @@ export function buildLeaderboard(
   return entries;
 }
 
-/** How team totals are combined from member scores. */
-export type TeamScoringMode = "aggregate" | "better_ball";
-
 export type TeamStanding = {
   teamId: string;
   teamName: string;
@@ -264,11 +282,7 @@ export function buildTeamStandings(
   format: ScoringFormat = "stableford",
   mode: TeamScoringMode = "aggregate"
 ): TeamStanding[] {
-  if (mode === "better_ball") {
-    // better_ball needs hole-level data — use aggregate fallback if only board given
-    return buildTeamStandingsAggregate(board, format, "better_ball");
-  }
-  return buildTeamStandingsAggregate(board, format, "aggregate");
+  return buildTeamStandingsAggregate(board, format, mode);
 }
 
 function buildTeamStandingsAggregate(
@@ -330,24 +344,25 @@ export type TeamMemberHoleScore = {
   teamName: string;
   displayName: string;
   holeNumber: number;
+  par: number;
   points: number;
   nett: number;
   gross: number;
 };
 
 /**
- * Fourball / better-ball: each hole takes the best points (or best nett for stroke)
- * among teammates, then sums those hole winners.
+ * Keep the best score per hole, or the best two where the format calls for it.
  */
 export function buildBetterBallStandings(
   memberHoleScores: TeamMemberHoleScore[],
-  format: ScoringFormat = "stableford"
+  format: ScoringFormat = "stableford",
+  mode: Exclude<TeamScoringMode, "aggregate"> = "better_ball"
 ): TeamStanding[] {
   type Acc = {
     teamName: string;
     members: Set<string>;
     memberNames: Set<string>;
-    byHole: Map<number, { points: number; nett: number; gross: number }>;
+    byHole: Map<number, TeamMemberHoleScore[]>;
   };
   const teams = new Map<string, Acc>();
 
@@ -364,35 +379,18 @@ export function buildBetterBallStandings(
     }
     acc.members.add(row.playerId);
     acc.memberNames.add(row.displayName);
-    const prev = acc.byHole.get(row.holeNumber);
-    if (!prev) {
-      acc.byHole.set(row.holeNumber, {
-        points: row.points,
-        nett: row.nett,
-        gross: row.gross,
-      });
-    } else if (format === "stroke") {
-      if (row.nett < prev.nett) {
-        acc.byHole.set(row.holeNumber, {
-          points: row.points,
-          nett: row.nett,
-          gross: row.gross,
-        });
-      }
-    } else if (row.points > prev.points) {
-      acc.byHole.set(row.holeNumber, {
-        points: row.points,
-        nett: row.nett,
-        gross: row.gross,
-      });
-    }
+    const candidates = acc.byHole.get(row.holeNumber) ?? [];
+    const count = mode === "fourball_alliance" || (mode === "better_ball_par3_both" && row.par === 3) ? 2 : 1;
+    candidates.push(row);
+    candidates.sort((a, b) => format === "stroke" ? a.nett - b.nett : b.points - a.points);
+    acc.byHole.set(row.holeNumber, candidates.slice(0, count));
   }
 
   const list: TeamStanding[] = Array.from(teams.entries()).map(([teamId, acc]) => {
     let totalPoints = 0;
     let totalNet = 0;
     let totalGross = 0;
-    for (const h of acc.byHole.values()) {
+    for (const h of [...acc.byHole.values()].flat()) {
       totalPoints += h.points;
       totalNet += h.nett;
       totalGross += h.gross;
@@ -406,7 +404,7 @@ export function buildBetterBallStandings(
       playerCount: acc.members.size,
       memberNames: Array.from(acc.memberNames).sort((a, b) => a.localeCompare(b)),
       rank: 0,
-      mode: "better_ball" as TeamScoringMode,
+      mode,
     };
   });
 
@@ -426,7 +424,7 @@ export function expandMemberHoleScores(
   holes: Hole[],
   players: PlayerForBoard[],
   scores: StoredScore[],
-  options: { format?: ScoringFormat; holesCount?: number } = {}
+  options: { format?: ScoringFormat; holesCount?: number; teamScoring?: TeamScoringMode } = {}
 ): TeamMemberHoleScore[] {
   const format = options.format ?? "stableford";
   const holesCount = options.holesCount ?? holes.length;
@@ -439,7 +437,7 @@ export function expandMemberHoleScores(
       );
       if (!entry) continue;
       const hs = getHandicapStrokes(
-        player.playingHandicap,
+        getCompetitionHandicap(player.playingHandicap, options.teamScoring),
         hole.strokeIndex,
         holesCount
       );
@@ -452,6 +450,7 @@ export function expandMemberHoleScores(
         teamName: player.teamName,
         displayName: player.displayName,
         holeNumber: hole.number,
+        par: hole.par,
         points,
         nett,
         gross,
