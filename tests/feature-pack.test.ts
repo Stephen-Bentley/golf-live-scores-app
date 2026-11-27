@@ -11,12 +11,7 @@ import {
 } from "@/domain/scoring";
 import { calculatePlayingHandicap, courseParFromHoles } from "@/domain/handicap";
 import { checkRateLimit, clearRateLimits } from "@/lib/rate-limit";
-import {
-  enqueueScore,
-  loadQueue,
-  removeFromQueue,
-  clearQueue,
-} from "@/lib/offline-queue";
+import { findQueuedScore, loadQueue, resolveConflict, writeQueueItem, type QueuedScore } from "@/lib/offline-queue";
 
 const holes18: Hole[] = Array.from({ length: 18 }, (_, i) => ({
   number: i + 1,
@@ -159,6 +154,8 @@ describe("feature: offline queue", () => {
     const store = new Map<string, string>();
     // @ts-expect-error test mock
     global.localStorage = {
+      get length() { return store.size; },
+      key: (index: number) => [...store.keys()][index] ?? null,
       getItem: (k: string) => store.get(k) ?? null,
       setItem: (k: string, v: string) => {
         store.set(k, v);
@@ -171,15 +168,33 @@ describe("feature: offline queue", () => {
     global.window = global;
   });
 
-  it("queues and replaces score for same hole", () => {
-    clearQueue("r1", "p1");
-    enqueueScore("r1", "p1", { holeNumber: 3, grossScore: 4 });
-    enqueueScore("r1", "p1", { holeNumber: 3, grossScore: 5 });
-    const q = loadQueue("r1", "p1");
-    expect(q).toHaveLength(1);
-    expect(q[0].grossScore).toBe(5);
-    removeFromQueue("r1", "p1", 3);
-    expect(loadQueue("r1", "p1")).toHaveLength(0);
+  it("restores older queued scores with a version check and isolates scorer and round", () => {
+    localStorage.setItem("fairway_offline_scores_r1_p1", JSON.stringify([
+      { id: "old", playerId: "p1", holeNumber: 3, grossScore: 4 },
+    ]));
+    const queued = findQueuedScore(loadQueue("r1", "p1"), 3, "p1");
+    expect(queued?.scores).toEqual([{ targetId: "p1", grossScore: 4, clientVersion: 0 }]);
+    expect(loadQueue("r1", "p2")).toEqual([]);
+    expect(loadQueue("r2", "p1")).toEqual([]);
+    writeQueueItem("r1", "p1", queued!, true);
+    expect(loadQueue("r1", "p1")).toEqual([]);
+  });
+
+  it("persists the conflict and resolves only the affected player in a group score", () => {
+    const item: QueuedScore = {
+      id: "batch", holeNumber: 5, kind: "fourball",
+      scores: [
+        { targetId: "p1", grossScore: 4, clientVersion: 0 },
+        { targetId: "p2", grossScore: 6, clientVersion: 1 },
+      ],
+      conflict: { targetId: "p2", serverScore: 5, serverVersion: 2 },
+    };
+    writeQueueItem("r1", "p1", item);
+    const [restored] = loadQueue("r1", "p1");
+    expect(restored).toEqual(item);
+    expect(resolveConflict(restored, true)?.scores).toEqual([item.scores[0], { ...item.scores[1], clientVersion: 2 }]);
+    expect(resolveConflict(restored, false)?.scores).toEqual([item.scores[0]]);
+    expect(resolveConflict({ ...restored, scores: [item.scores[1]] }, false)).toBeUndefined();
   });
 });
 
