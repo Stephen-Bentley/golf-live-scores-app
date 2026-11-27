@@ -6,6 +6,8 @@ pipeline {
         timestamps()
     }
 
+    triggers { pollSCM('H/5 * * * *') }
+
     parameters {
         string(name: 'FAIRWAY_HOST_PORT', defaultValue: '7446', description: 'Homeserver port for Fairway Live.')
     }
@@ -28,12 +30,6 @@ pipeline {
         stage('Build image on homeserver') {
             steps {
                 sh 'docker build --tag "$FAIRWAY_IMAGE" .'
-            }
-        }
-
-        stage('Approve deployment') {
-            steps {
-                input message: 'Deploy Fairway Live to Docker on the homeserver?', ok: 'Deploy'
             }
         }
 
