@@ -12,6 +12,9 @@ docker compose up -d --build
 
 Open **http://localhost:3000** for a local deployment. For public deployment, place
 the app behind a TLS reverse proxy and set `NEXT_PUBLIC_APP_URL` to that HTTPS URL.
+For LAN-only HTTP access, set `NEXT_PUBLIC_APP_URL` to the exact private IPv4 URL
+and port used in the browser, for example `http://192.168.1.13:7446`. The app
+accepts HTTP session cookies only at the configured private or loopback address.
 
 That’s it. Postgres and the Next.js app both start; the app applies the Prisma schema on boot.
 
@@ -29,7 +32,7 @@ development-only Compose override when running the app with `npm run dev`.
 | Variable | Purpose |
 |----------|---------|
 | `POSTGRES_PASSWORD` | Required password for the PostgreSQL container. Use a strong, unique value. |
-| `NEXT_PUBLIC_APP_URL` | Required public HTTPS URL for deployed environments. |
+| `NEXT_PUBLIC_APP_URL` | Required app URL. Use HTTPS for internet access, or an exact private IPv4/loopback HTTP URL for LAN access. |
 | `FAIRWAY_HOST_PORT` | Optional host port. Defaults to `3000`. The container listens on port `3000`. |
 | `GOLF_COURSE_API_KEY` | Optional server-only key for course search and import. |
 | `ALLOW_GUEST_HOSTS` | Optional. Defaults to `true` in Compose; set `false` to require email-only host access. |

@@ -30,19 +30,17 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    image: ${FAIRWAY_IMAGE:-fairway-live:local}
     container_name: fairway-live-app
     restart: unless-stopped
     ports:
       - "${FAIRWAY_HOST_PORT:-3000}:3000"
-    # Load GOLF_COURSE_API_KEY (and any other vars) from project .env
-    env_file:
-      - .env
     environment:
       # Inside Docker the DB host is the service name "db", not localhost
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/fairway_live?schema=public
-      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:?Set NEXT_PUBLIC_APP_URL to the public HTTPS URL}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:?Set NEXT_PUBLIC_APP_URL to the app URL}
       # Explicitly pass through the same key from .env (Compose substitution)
-      GOLF_COURSE_API_KEY: ${GOLF_COURSE_API_KEY}
+      GOLF_COURSE_API_KEY: ${GOLF_COURSE_API_KEY:-}
       # Guest hosting is enabled by default for this app. Set this to false on
       # an internet-facing deployment that requires email-only host access.
       ALLOW_GUEST_HOSTS: ${ALLOW_GUEST_HOSTS:-true}
@@ -52,6 +50,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
 volumes:
   fairway_pg_data:

@@ -3,8 +3,9 @@
  * Hosts may also hold a player session for the same browser (score entry).
  */
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import type { Prisma } from "@prisma/client";
+import { isIPv4 } from "node:net";
 import { prisma } from "./db";
 import { createHash, randomBytes } from "crypto";
 import { makeJoinCode as generateJoinCode } from "./join-code";
@@ -36,12 +37,37 @@ function hashSessionToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
-function sessionCookieOptions() {
+export function shouldSetSecureSessionCookie(
+  requestHost: string | null,
+  forwardedProto: string | null,
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  if (env.NODE_ENV !== "production") return false;
+  if (forwardedProto && forwardedProto.trim().toLowerCase() !== "http") return true;
+
+  let appUrl: URL;
+  try {
+    appUrl = new URL(env.NEXT_PUBLIC_APP_URL ?? "");
+  } catch {
+    return true;
+  }
+  if (appUrl.protocol !== "http:" || appUrl.host !== requestHost?.toLowerCase()) return true;
+
+  // HTTP is supported for an explicitly configured loopback or private IPv4 origin.
+  const host = appUrl.hostname;
+  if (host === "localhost" || host === "[::1]") return false;
+  if (!isIPv4(host)) return true;
+  const [first, second] = host.split(".").map(Number);
+  return !(first === 10 || first === 127 || (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168));
+}
+
+async function sessionCookieOptions() {
+  const request = await headers();
   return {
     httpOnly: true,
     sameSite: "lax" as const,
-    // Production deployments must terminate TLS before requests reach Next.js.
-    secure: process.env.NODE_ENV === "production",
+    secure: shouldSetSecureSessionCookie(request.get("host"), request.get("x-forwarded-proto")),
     path: "/",
     maxAge: SESSION_DAYS * 24 * 60 * 60,
   };
@@ -115,7 +141,7 @@ export async function setHostSessionCookie(session: HostSession) {
       expiresAt: new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000),
     },
   });
-  jar.set(HOST_SESSION_COOKIE, token, sessionCookieOptions());
+  jar.set(HOST_SESSION_COOKIE, token, await sessionCookieOptions());
 }
 
 export async function createPlayerSessionToken(
@@ -137,7 +163,7 @@ export async function createPlayerSessionToken(
 
 export async function writePlayerSessionCookie(token: string) {
   const jar = await cookies();
-  jar.set(PLAYER_SESSION_COOKIE, token, sessionCookieOptions());
+  jar.set(PLAYER_SESSION_COOKIE, token, await sessionCookieOptions());
 }
 
 export async function setPlayerSessionCookie(session: PlayerSession) {
