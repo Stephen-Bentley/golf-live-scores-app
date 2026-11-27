@@ -4,6 +4,7 @@
  */
 
 import { cookies } from "next/headers";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "./db";
 import { createHash, randomBytes } from "crypto";
 import { makeJoinCode as generateJoinCode } from "./join-code";
@@ -117,10 +118,12 @@ export async function setHostSessionCookie(session: HostSession) {
   jar.set(HOST_SESSION_COOKIE, token, sessionCookieOptions());
 }
 
-export async function setPlayerSessionCookie(session: PlayerSession) {
-  const jar = await cookies();
+export async function createPlayerSessionToken(
+  session: Pick<PlayerSession, "playerId" | "roundId">,
+  db: Pick<Prisma.TransactionClient, "authSession"> = prisma,
+) {
   const token = randomBytes(32).toString("base64url");
-  await prisma.authSession.create({
+  await db.authSession.create({
     data: {
       tokenHash: hashSessionToken(token),
       role: "player",
@@ -129,7 +132,16 @@ export async function setPlayerSessionCookie(session: PlayerSession) {
       expiresAt: new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000),
     },
   });
+  return token;
+}
+
+export async function writePlayerSessionCookie(token: string) {
+  const jar = await cookies();
   jar.set(PLAYER_SESSION_COOKIE, token, sessionCookieOptions());
+}
+
+export async function setPlayerSessionCookie(session: PlayerSession) {
+  await writePlayerSessionCookie(await createPlayerSessionToken(session));
 }
 
 export async function clearSessions() {
