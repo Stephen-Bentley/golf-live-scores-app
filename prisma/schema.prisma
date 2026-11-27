@@ -139,8 +139,21 @@ model Fourball {
   startingHole Int      @default(1)
   round        Round    @relation(fields: [roundId], references: [id], onDelete: Cascade)
   players      Player[]
+  scrambleScores ScrambleScore[]
 
   @@unique([roundId, name])
+}
+
+model ScrambleScore {
+  fourballId String
+  holeNumber Int
+  grossScore Int
+  version    Int      @default(1)
+  enteredBy  String
+  updatedAt  DateTime @updatedAt
+  fourball   Fourball @relation(fields: [fourballId], references: [id], onDelete: Cascade)
+
+  @@id([fourballId, holeNumber])
 }
 
 model Player {

@@ -71,6 +71,10 @@ export default function ScorecardPage() {
         const notesData = notesRes.ok ? await notesRes.json() : { notes: [] };
         if (!lbRes.ok) throw new Error(lb.error || "Failed to load");
         if (cancelled) return;
+        if (lb.round.teamScoring === "american_scramble") {
+          router.replace(`/rounds/${roundId}/score`);
+          return;
+        }
 
         const format = (lb.round.scoringFormat || "stableford") as ScoringFormat;
         const handicap = getCompetitionHandicap(player.playingHandicap, lb.round.teamScoring as TeamScoringMode);

@@ -64,6 +64,16 @@ describe("flow: create round validation", () => {
       })
     ).toThrow();
   });
+
+  it("rejects duplicate hole numbers even when stroke indexes are unique", () => {
+    const holes = [validSnapshot.holes[0], { ...validSnapshot.holes[1], number: 1 }, ...validSnapshot.holes.slice(2)];
+    expect(() => createRoundSchema.parse({
+      courseName: "Royal Test",
+      courseLocation: "Somewhere",
+      teeSetSnapshot: { ...validSnapshot, holes },
+      teamScoring: "american_scramble",
+    })).toThrow("Hole numbers must be unique");
+  });
 });
 
 describe("flow: join round validation", () => {

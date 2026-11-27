@@ -8,6 +8,7 @@ import {
   type TeamScoringMode,
   type TeamStanding,
 } from "@/domain/scoring";
+import { buildScrambleStandings, type ScrambleGroup } from "@/domain/scramble";
 
 export type AllianceDraw = [string, string][];
 
@@ -26,11 +27,21 @@ type RoundResultsInput = {
   allianceDraw: unknown;
   players: ResultPlayer[];
   scores: { playerId: string; holeNumber: number; grossScore: number; updatedAt: Date }[];
+  fourballs?: ScrambleGroup[];
 };
+
+export const scrambleFourballInclude = {
+  players: { select: { displayName: true, playingHandicap: true } },
+  scrambleScores: { select: { holeNumber: true, grossScore: true, version: true } },
+} as const;
 
 export function buildRoundResults(round: RoundResultsInput, holes: Hole[]) {
   const teamScoring = round.teamScoring as TeamScoringMode;
   const format = round.scoringFormat;
+  if (teamScoring === "american_scramble") {
+    const scramble = buildScrambleStandings(round.fourballs ?? [], holes, format);
+    return { leaderboard: [], teams: scramble, scramble };
+  }
   const options = { format, holesCount: round.holesCount, teamScoring };
   const players = round.players.map((p) => {
     const group = teamScoring === "fourball_alliance" ? p.fourball : p.team;

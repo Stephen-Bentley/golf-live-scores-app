@@ -16,7 +16,10 @@ export const teeSetSnapshotSchema = z.object({
   colour: z.string().min(1),
   rating: z.number().nullable().optional(),
   slope: z.number().int().nullable().optional(),
-  holes: z.array(holeSchema).min(9).max(18),
+  holes: z.array(holeSchema).min(9).max(18).refine(
+    (holes) => new Set(holes.map(({ number }) => number)).size === holes.length,
+    "Hole numbers must be unique"
+  ),
 });
 
 export const createRoundSchema = z.object({

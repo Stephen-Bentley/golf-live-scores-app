@@ -30,6 +30,7 @@
 | Betterball | Count the better score in each pair on each hole |
 | Betterball with both scores on par 3s | Count both scores on par 3s and the better score on other holes |
 | Mystery Sippy Cup 4Ball Alliance | Count the best two scores per hole from the fourball. Cap playing handicaps at 18. Score entry shows the mulligan and par-5 drive rules. |
+| American Scramble | Two to four players per fourball play from the best shot and record one shared score per hole. The team scorecard, live standings, and Excel export use the same team totals. |
 | Mystery Betterball Alliance | Draw pairs into alliances once. Each alliance combines the two constituent Betterball scores. |
 
 ## Verification

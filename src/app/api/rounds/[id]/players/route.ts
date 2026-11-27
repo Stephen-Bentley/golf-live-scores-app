@@ -53,6 +53,14 @@ async function savePlayer(request: Request, { params }: Params, add: boolean) {
       if (add && roster.length >= 100) {
         return NextResponse.json({ error: "This round is full (max 100 players)." }, { status: 409 });
       }
+      if (round.teamScoring === "american_scramble" && data.fourballId !== undefined && data.fourballId !== current?.fourballId) {
+        const scoredGroup = await tx.scrambleScore.findFirst({
+          where: { fourballId: { in: [current?.fourballId, data.fourballId].filter((id): id is string => Boolean(id)) } },
+        });
+        if (scoredGroup) {
+          return NextResponse.json({ error: "A scramble team’s roster is locked once it has saved a score." }, { status: 409 });
+        }
+      }
       if (data.fourballId && data.fourballId !== current?.fourballId) {
         const fourball = await tx.fourball.findFirst({ where: { id: data.fourballId, roundId } });
         if (!fourball) return NextResponse.json({ error: "Invalid fourball." }, { status: 400 });
@@ -119,6 +127,14 @@ export async function DELETE(request: Request, { params }: Params) {
       if (!round) return NextResponse.json({ error: "Not found" }, { status: 404 });
       if (round.hostId !== host.userId) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+      if (round.teamScoring === "american_scramble") {
+        const scoredGroup = await tx.scrambleScore.findFirst({
+          where: { fourball: { roundId, players: { some: { id: body.playerId } } } },
+        });
+        if (scoredGroup) {
+          return NextResponse.json({ error: "A scramble team’s roster is locked once it has saved a score." }, { status: 409 });
+        }
       }
       const { count } = await tx.player.deleteMany({ where: { id: body.playerId, roundId } });
       if (!count) return NextResponse.json({ error: "Player not found" }, { status: 404 });

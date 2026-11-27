@@ -14,6 +14,7 @@ import {
   type TeamScoringMode,
   type TeamStanding,
 } from "@/domain/scoring";
+import type { ScrambleStanding } from "@/domain/scramble";
 
 export type ExportPlayer = {
   id: string;
@@ -39,6 +40,7 @@ export type ExportRound = {
   scoringFormat?: ScoringFormat;
   teamScoring?: TeamScoringMode;
   standings?: TeamStanding[];
+  scramble?: ScrambleStanding[];
   teeSetSnapshot: {
     name: string;
     colour: string;
@@ -112,6 +114,11 @@ export async function generateRoundWorkbook(
     (a, b) => a.number - b.number
   );
   const format = round.scoringFormat ?? "stableford";
+  if (round.teamScoring === "american_scramble") {
+    addScrambleSheets(workbook, round.scramble ?? [], holes, format);
+    addRoundSetup(workbook, round, holes, format);
+    return Buffer.from(await workbook.xlsx.writeBuffer());
+  }
   const board = buildLeaderboard(holes, round.players, round.scores, { format, teamScoring: round.teamScoring });
 
   // Order players by leaderboard rank for consistent sheets
@@ -267,33 +274,7 @@ export async function generateRoundWorkbook(
     { width: 10 },
   ];
 
-  // --- Sheet 4: Round setup ---
-  const setup = workbook.addWorksheet("Round setup");
-  setup.addRow(["Course", safeSpreadsheetText(round.courseName)]);
-  setup.addRow(["Location", safeSpreadsheetText(round.courseLocation)]);
-  setup.addRow(["Tee set", safeSpreadsheetText(round.teeName)]);
-  setup.addRow(["Tee colour", safeSpreadsheetText(round.teeColour)]);
-  setup.addRow(["Round ID", round.id]);
-  setup.addRow(["Join code", round.joinCode]);
-  setup.addRow(["Status", round.status]);
-  setup.addRow(["Generated at", new Date().toISOString()]);
-  setup.addRow([]);
-  setup.addRow(["Hole", "Par", "Stroke Index", "Distance"]);
-  styleHeaderRow(setup, 10);
-  for (const h of holes) {
-    setup.addRow([h.number, h.par, h.strokeIndex, h.distance ?? ""]);
-  }
-  setup.addRow([]);
-  setup.addRow(["Scoring format", format.replaceAll("_", " ")]);
-  if (round.teamScoring === "fourball_alliance") {
-    setup.addRow(["Scoring handicap", "Playing handicap capped at 18"]);
-  }
-  setup.addRow([
-    "Handicap allocation",
-    `floor(hcp/${holes.length}) on every hole + 1 on holes with stroke index <= hcp % ${holes.length}`,
-  ]);
-  setup.addRow(["Retention", "Default retention 12 months"]);
-  setup.columns = [{ width: 20 }, { width: 70 }, { width: 14 }, { width: 12 }];
+  addRoundSetup(workbook, round, holes, format);
 
   if (round.standings?.length) {
     const standings = workbook.addWorksheet("Team standings");
@@ -321,6 +302,70 @@ export async function generateRoundWorkbook(
 
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);
+}
+
+function addScrambleSheets(workbook: ExcelJS.Workbook, teams: ScrambleStanding[], holes: Hole[], format: ScoringFormat) {
+  const standings = workbook.addWorksheet("Team standings");
+  const cards = workbook.addWorksheet("Team scorecards");
+  const points = format === "stroke" ? [] : ["Points"];
+  standings.addRow(["Rank", "Team", "Players", "Team handicap", "Holes played", "Gross", "Nett", format === "stroke" ? "Nett to par" : "Points"]);
+  cards.addRow(["Team", "Hole", "Par", "Gross", "Nett", ...points]);
+  for (const team of teams) {
+    const name = safeSpreadsheetText(team.teamName);
+    standings.addRow([
+      team.rank || null, name, safeSpreadsheetText(team.memberNames.join(", ")),
+      team.playingHandicap, team.holesCompleted,
+      team.holesCompleted ? team.totalGross : null,
+      team.holesCompleted ? team.totalNet : null,
+      team.holesCompleted ? (format === "stroke" ? team.netToPar : team.totalPoints) : null,
+    ]);
+    const scores = new Map(team.holeScores.map((score) => [score.holeNumber, score]));
+    for (const hole of holes) {
+      const score = scores.get(hole.number);
+      cards.addRow([
+        name, hole.number, hole.par, score?.grossScore, score?.netScore,
+        ...(points.length ? [score?.points] : []),
+      ]);
+    }
+  }
+  [8, 28, 48, 18, 14, 12, 12, 12].forEach((width, i) => { standings.getColumn(i + 1).width = width; });
+  cards.getColumn(1).width = 28;
+  for (const sheet of [standings, cards]) {
+    styleHeader(sheet);
+    sheet.views = [{ state: "frozen", ySplit: 1 }];
+  }
+}
+
+function addRoundSetup(workbook: ExcelJS.Workbook, round: ExportRound, holes: Hole[], format: ScoringFormat) {
+  const setup = workbook.addWorksheet("Round setup");
+  setup.addRow(["Course", safeSpreadsheetText(round.courseName)]);
+  setup.addRow(["Location", safeSpreadsheetText(round.courseLocation)]);
+  setup.addRow(["Tee set", safeSpreadsheetText(round.teeName)]);
+  setup.addRow(["Tee colour", safeSpreadsheetText(round.teeColour)]);
+  setup.addRow(["Round ID", round.id]);
+  setup.addRow(["Join code", round.joinCode]);
+  setup.addRow(["Status", round.status]);
+  setup.addRow(["Generated at", new Date().toISOString()]);
+  setup.addRow([]);
+  setup.addRow(["Hole", "Par", "Stroke Index", "Distance"]);
+  styleHeaderRow(setup, 10);
+  for (const h of holes) {
+    setup.addRow([h.number, h.par, h.strokeIndex, h.distance ?? ""]);
+  }
+  setup.addRow([]);
+  setup.addRow(["Scoring format", format.replaceAll("_", " ")]);
+  if (round.teamScoring === "fourball_alliance") {
+    setup.addRow(["Scoring handicap", "Playing handicap capped at 18"]);
+  }
+  if (round.teamScoring === "american_scramble") {
+    setup.addRow(["Team scoring", "American Scramble"]);
+  }
+  setup.addRow([
+    "Handicap allocation",
+    `floor(hcp/${holes.length}) on every hole + 1 on holes with stroke index <= hcp % ${holes.length}`,
+  ]);
+  setup.addRow(["Retention", "Default retention 12 months"]);
+  setup.columns = [{ width: 20 }, { width: 70 }, { width: 14 }, { width: 12 }];
 }
 
 function styleHeader(sheet: ExcelJS.Worksheet) {
