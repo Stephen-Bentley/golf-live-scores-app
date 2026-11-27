@@ -6,7 +6,7 @@ pipeline {
         timestamps()
     }
 
-    triggers { pollSCM('H/5 * * * *') }
+    triggers { pollSCM('H/10 * * * *') }
 
     parameters {
         string(name: 'FAIRWAY_HOST_PORT', defaultValue: '7446', description: 'Homeserver port for Fairway Live.')
