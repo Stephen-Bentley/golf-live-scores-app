@@ -1,5 +1,7 @@
 "use client";
 
+import { SpectatorSharing } from "@/components/SpectatorSharing";
+
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { FourballManager, type Fourball, type RosterPlayer } from "@/components/FourballManager";
@@ -682,6 +684,8 @@ export default function LeaderboardPage() {
               Download Excel
             </Button>
           </div>
+
+          <SpectatorSharing key={roundId} roundId={roundId} />
 
           {!usesFourballs && (
             <div className="border-t border-stone-200 pt-6">

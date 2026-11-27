@@ -91,6 +91,7 @@ model Round {
   hostId         String
   joinCode       String        @unique
   joinCodeActive Boolean       @default(true)
+  spectatorToken String?       @unique
   courseName     String
   courseLocation String
   teeName        String
