@@ -5,6 +5,7 @@
 export type ScoringFormat = "stableford" | "stroke" | "modified_stableford";
 export const TEAM_SCORING_MODES = [
   "aggregate", "better_ball", "better_ball_par3_both", "fourball_alliance", "mystery_better_ball_alliance",
+  "american_scramble",
 ] as const;
 export type TeamScoringMode = (typeof TEAM_SCORING_MODES)[number];
 

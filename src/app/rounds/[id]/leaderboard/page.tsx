@@ -35,6 +35,7 @@ const teamDescriptions: Record<TeamScoringMode, string> = {
   better_ball_par3_both: "The better score counts on each hole. Both scores count on par 3s.",
   fourball_alliance: "The best two scores from each fourball count on every hole.",
   mystery_better_ball_alliance: "Two randomly drawn Betterball pairs combine their totals.",
+  american_scramble: "Each fourball records one shared score per hole.",
 };
 
 function TeamCreateForm({
@@ -117,9 +118,12 @@ export default function LeaderboardPage() {
       playerCount: number;
       memberNames?: string[];
       mode?: string;
+      holesCompleted?: number;
+      netToPar?: number;
     }>
   >([])
   const [teamScoring, setTeamScoring] = useState<TeamScoringMode>("aggregate");
+  const [isStrokePlay, setIsStrokePlay] = useState(false);
   const [alliancesDrawn, setAlliancesDrawn] = useState(false);
   const [drawing, setDrawing] = useState(false);
   const [drawError, setDrawError] = useState<string | null>(null);
@@ -149,6 +153,7 @@ export default function LeaderboardPage() {
       setHoles((data.holes ?? []).map((hole: { number: number }) => hole.number).sort((a: number, b: number) => a - b));
       setTeams(data.teams || []);
       setTeamScoring(data.round?.teamScoring || "aggregate");
+      setIsStrokePlay(data.round?.scoringFormat === "stroke");
       setAlliancesDrawn(Boolean(data.round?.alliancesDrawn));
       if (!correctPlayerId && data.players?.length) {
         setCorrectPlayerId(data.players[0].id);
@@ -329,7 +334,11 @@ export default function LeaderboardPage() {
     }
   }
 
-  const incomplete = board.filter((e) => !e.isComplete);
+  const isScramble = teamScoring === "american_scramble";
+  const usesFourballs = teamScoring === "fourball_alliance" || isScramble;
+  const incomplete = isScramble
+    ? teams.filter((team) => team.holesCompleted !== holes.length).map((team) => team.teamName)
+    : board.filter((entry) => !entry.isComplete).map((entry) => entry.displayName);
 
   if (loading) {
     return (
@@ -427,7 +436,7 @@ export default function LeaderboardPage() {
               variant="secondary"
               onClick={() => router.push(`/rounds/${roundId}/score`)}
             >
-              Enter my scores
+              {isScramble ? "Enter team scores" : "Enter my scores"}
             </Button>
           )}
         </div>
@@ -444,7 +453,7 @@ export default function LeaderboardPage() {
         </Alert>
       )}
 
-      <Card className="mt-6 overflow-hidden p-0">
+      {!isScramble && <Card className="mt-6 overflow-hidden p-0">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[480px] text-left text-sm">
             <thead>
@@ -517,16 +526,16 @@ export default function LeaderboardPage() {
             </tbody>
           </table>
         </div>
-      </Card>
+      </Card>}
 
 
-      {teams.length > 0 && (
+      {(isScramble || teams.length > 0) && (
         <Card className="mt-6 overflow-hidden p-0">
           <div className="border-b border-stone-200 bg-stone-50 px-4 py-3">
             <h2 className="font-semibold text-emerald-950">
               {teamScoring === "mystery_better_ball_alliance"
                 ? (alliancesDrawn ? "Alliance standings" : "Betterball pair standings")
-                : teamScoring === "fourball_alliance" ? "Fourball standings" : "Team standings"}
+                : isScramble ? "American Scramble standings" : usesFourballs ? "Fourball standings" : "Team standings"}
             </h2>
             <p className="text-xs text-stone-500">
               {teamScoring === "mystery_better_ball_alliance" && !alliancesDrawn
@@ -541,19 +550,24 @@ export default function LeaderboardPage() {
                   <th className="px-4 py-3 font-semibold">Rank</th>
                   <th className="px-4 py-3 font-semibold">Team</th>
                   <th className="px-4 py-3 font-semibold">Players</th>
+                  {isScramble && <th className="px-4 py-3 font-semibold">Holes</th>}
                   <th className="px-4 py-3 font-semibold">Gross</th>
                   <th className="px-4 py-3 font-semibold">Nett</th>
-                  <th className="px-4 py-3 font-semibold">Pts</th>
+                  {isScramble && isStrokePlay && <th className="px-4 py-3 font-semibold">Nett to par</th>}
+                  {(!isScramble || !isStrokePlay) && <th className="px-4 py-3 font-semibold">Pts</th>}
                 </tr>
               </thead>
               <tbody>
+                {teams.length === 0 && (
+                  <tr><td colSpan={7} className="px-4 py-6 text-stone-500">No scramble teams yet.</td></tr>
+                )}
                 {teams.map((t) => (
                   <tr
                     key={t.teamId}
                     className="border-b border-stone-100 hover:bg-emerald-50/50"
                   >
                     <td className="px-4 py-3 font-bold text-emerald-800">
-                      {t.rank}
+                      {t.rank || "—"}
                     </td>
                     <td className="px-4 py-3">
                       <div className="font-medium text-stone-900">{t.teamName}</div>
@@ -564,11 +578,21 @@ export default function LeaderboardPage() {
                       )}
                     </td>
                     <td className="px-4 py-3">{t.playerCount}</td>
-                    <td className="px-4 py-3 tabular-nums">{t.totalGross ?? "—"}</td>
-                    <td className="px-4 py-3 tabular-nums">{t.totalNet}</td>
-                    <td className="px-4 py-3 font-semibold text-emerald-900 tabular-nums">
-                      {t.totalPoints}
-                    </td>
+                    {isScramble && <td className="px-4 py-3">{t.holesCompleted}/{holes.length}</td>}
+                    <td className="px-4 py-3 tabular-nums">{t.holesCompleted === 0 ? "—" : t.totalGross ?? "—"}</td>
+                    <td className="px-4 py-3 tabular-nums">{t.holesCompleted === 0 ? "—" : t.totalNet}</td>
+                    {isScramble && isStrokePlay && (
+                      <td className="px-4 py-3 tabular-nums">
+                        {t.holesCompleted && t.netToPar !== undefined
+                          ? t.netToPar > 0 ? `+${t.netToPar}` : t.netToPar
+                          : "—"}
+                      </td>
+                    )}
+                    {(!isScramble || !isStrokePlay) && (
+                      <td className="px-4 py-3 font-semibold text-emerald-900 tabular-nums">
+                        {t.holesCompleted === 0 ? "—" : t.totalPoints}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -584,12 +608,12 @@ export default function LeaderboardPage() {
         >
           Score entry
         </Button>
-        <Button
+        {!isScramble && <Button
           variant="secondary"
           onClick={() => router.push(`/rounds/${roundId}/scorecard`)}
         >
           My scorecard
-        </Button>
+        </Button>}
         <Button variant="quiet" onClick={load}>
           Refresh
         </Button>
@@ -603,8 +627,8 @@ export default function LeaderboardPage() {
             </h2>
             {incomplete.length > 0 && (
               <Alert tone="warning" className="mt-3">
-                {incomplete.length} player(s) still have missing holes:{" "}
-                {incomplete.map((p) => p.displayName).join(", ")}
+                {incomplete.length} {isScramble ? "team(s)" : "player(s)"} still have missing holes:{" "}
+                {incomplete.join(", ")}
               </Alert>
             )}
           </div>
@@ -655,7 +679,7 @@ export default function LeaderboardPage() {
             </Button>
           </div>
 
-          {teamScoring !== "fourball_alliance" && (
+          {!usesFourballs && (
             <div className="border-t border-stone-200 pt-6">
               <h3 className="font-semibold text-emerald-950">Competition teams</h3>
               <p className="mt-1 text-sm text-stone-600">
@@ -669,7 +693,7 @@ export default function LeaderboardPage() {
             roundId={roundId}
             fourballs={fourballs}
             players={players}
-            teams={teamScoring === "fourball_alliance" ? [] : competitionTeams}
+            teams={usesFourballs ? [] : competitionTeams}
             holes={holes}
             locked={status === "closed" || status === "archived"}
             canInvite={joinCodeActive}
@@ -691,7 +715,7 @@ export default function LeaderboardPage() {
             </div>
           )}
 
-          <div className="border-t border-stone-200 pt-6">
+          {!isScramble && <div className="border-t border-stone-200 pt-6">
             <h3 className="font-semibold text-emerald-950">Correct a score</h3>
             <div className="mt-3 grid gap-3 sm:grid-cols-3">
               <label className="block text-sm font-medium text-stone-700">
@@ -743,7 +767,7 @@ export default function LeaderboardPage() {
             >
               Save correction
             </Button>
-          </div>
+          </div>}
         </Card>
       )}
     </PageShell>

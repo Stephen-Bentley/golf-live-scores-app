@@ -19,6 +19,8 @@ import {
 } from "@/domain/scoring";
 import { FourballScoring, type PlayerScore, type ScoreRow, type ScoringGroup } from "@/components/FourballScoring";
 import { SippyCupRules } from "@/components/SippyCupRules";
+import { ScrambleScoring } from "@/components/ScrambleScoring";
+import type { ScrambleStanding } from "@/domain/scramble";
 
 export default function ScoreEntryPage() {
   const params = useParams();
@@ -32,6 +34,8 @@ export default function ScoreEntryPage() {
   const [format, setFormat] = useState<ScoringFormat>("stableford");
   const [teamScoring, setTeamScoring] = useState<TeamScoringMode>("aggregate");
   const [scoringGroup, setScoringGroup] = useState<ScoringGroup | null>(null);
+  const [scrambleTeams, setScrambleTeams] = useState<ScrambleStanding[]>([]);
+  const [scrambleId, setScrambleId] = useState("");
   const [scoreMode, setScoreMode] = useState<"self" | "fourball">("self");
   const [scores, setScores] = useState<Record<number, ScoreRow>>({});
   const scoresRef = useRef(scores);
@@ -52,6 +56,30 @@ export default function ScoreEntryPage() {
 
   const closed = status === "closed" || status === "archived";
 
+  function loadScramble(data: {
+    scramble?: ScrambleStanding[];
+    myScrambleId?: string;
+    isHost: boolean;
+    holes: Hole[];
+    round: { status: string; scoringFormat: ScoringFormat };
+  }) {
+    const teams = data.isHost ? data.scramble ?? [] : (data.scramble ?? []).filter((team) => team.teamId === data.myScrambleId);
+    setScrambleTeams(teams);
+    setScrambleId((current) => teams.some((team) => team.teamId === current)
+      ? current
+      : data.myScrambleId ?? teams[0]?.teamId ?? "");
+    setHoles(data.holes);
+    setStatus(data.round.status);
+    setFormat(data.round.scoringFormat);
+  }
+
+  async function refreshScramble() {
+    const response = await fetch(`/api/rounds/${roundId}/leaderboard`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Could not refresh the team scorecard.");
+    loadScramble(data);
+  }
+
   async function loadRoundForPlayer(player: {
     playerId: string;
     displayName: string;
@@ -71,6 +99,10 @@ export default function ScoreEntryPage() {
 
     setFormat(data.round.scoringFormat);
     setTeamScoring(data.round.teamScoring);
+    if (data.round.teamScoring === "american_scramble") {
+      loadScramble(data);
+      return;
+    }
     setScoringGroup(data.scoringGroup ?? null);
     setScoreMode("self");
     const holeList = inTeeOrder<Hole>(data.holes ?? [], data.scoringGroup?.startingHole ?? 1);
@@ -123,6 +155,12 @@ export default function ScoreEntryPage() {
               setIsHost(true);
               setCourseName(lb.round?.courseName || "");
               setStatus(lb.round?.status || "");
+              if (lb.round.teamScoring === "american_scramble") {
+                setTeamScoring("american_scramble");
+                setNeedsHostJoin(false);
+                loadScramble(lb);
+                return;
+              }
               setHostJoinName(host.displayName || host.email?.split("@")[0] || "Host");
               setNeedsHostJoin(true);
               if (lb.holes?.length) setHoles(lb.holes);
@@ -450,6 +488,37 @@ export default function ScoreEntryPage() {
     return (
       <PageShell width="md">
         <p className="text-sm text-stone-500">Loading scorecard…</p>
+      </PageShell>
+    );
+  }
+
+  if (teamScoring === "american_scramble") {
+    const team = scrambleTeams.find((team) => team.teamId === scrambleId);
+    return (
+      <PageShell width="md">
+        <Topbar backHref={`/rounds/${roundId}/leaderboard`} backLabel="Leaderboard" />
+        <h1 className="text-2xl font-bold text-emerald-950">American Scramble</h1>
+        <p className="mt-2 text-sm text-stone-600">{courseName} · One shared score per team and hole</p>
+        {error && <Alert tone="error" className="mt-4">{error}</Alert>}
+        {isHost && scrambleTeams.length > 1 && (
+          <label className="mt-4 block text-sm font-medium text-stone-700">
+            Scramble team
+            <select
+              value={scrambleId}
+              onChange={(event) => setScrambleId(event.target.value)}
+              className="mt-1 block w-full rounded-lg border border-stone-300 px-3 py-2"
+            >
+              {scrambleTeams.map(({ teamId, teamName }) => <option key={teamId} value={teamId}>{teamName}</option>)}
+            </select>
+          </label>
+        )}
+        {team ? (
+          <ScrambleScoring key={team.teamId} roundId={roundId} team={team} holes={holes} format={format} closed={closed} onRefresh={refreshScramble} />
+        ) : (
+          <Alert tone="warning" className="mt-4">
+            {isHost ? "Create a fourball and assign its players from the leaderboard." : "Ask the host to assign you to a scramble team."}
+          </Alert>
+        )}
       </PageShell>
     );
   }

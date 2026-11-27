@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { generateRoundWorkbook } from "@/lib/export";
 import type { Hole, TeamScoringMode } from "@/domain/scoring";
-import { buildRoundResults } from "@/lib/round-results";
+import { buildRoundResults, scrambleFourballInclude } from "@/lib/round-results";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -21,6 +21,7 @@ export async function POST(_request: Request, { params }: Params) {
     include: {
       players: { include: { team: true, fourball: true }, omit: { inviteCode: true } },
       scores: true,
+      fourballs: { include: scrambleFourballInclude },
     },
   });
 
@@ -63,6 +64,7 @@ export async function POST(_request: Request, { params }: Params) {
     holes: Hole[];
   };
 
+  const { teams, scramble } = buildRoundResults(round, snapshot.holes);
   const buffer = await generateRoundWorkbook({
     id: round.id,
     courseName: round.courseName,
@@ -73,7 +75,8 @@ export async function POST(_request: Request, { params }: Params) {
     status: round.status,
     scoringFormat: round.scoringFormat,
     teamScoring: round.teamScoring as TeamScoringMode,
-    standings: buildRoundResults(round, snapshot.holes).teams,
+    standings: teams,
+    scramble,
     teeSetSnapshot: snapshot,
     players: round.players.map((p) => ({
       id: p.id,

@@ -479,6 +479,9 @@ export default function NewRoundPage() {
                 <option value="better_ball">
                   Betterball (best score each hole)
                 </option>
+                <option value="american_scramble">
+                  American Scramble (one score per team)
+                </option>
                 <option value="better_ball_par3_both">
                   Betterball (both scores count on par 3s)
                 </option>
@@ -490,6 +493,11 @@ export default function NewRoundPage() {
                 </option>
               </select>
             </label>
+            {teamScoring === "american_scramble" && (
+              <p className="text-sm text-stone-600 sm:col-span-2">
+                Assign two to four players to each fourball. Everyone plays from the best shot until the ball is holed.
+              </p>
+            )}
           </div>
         </Card>
 

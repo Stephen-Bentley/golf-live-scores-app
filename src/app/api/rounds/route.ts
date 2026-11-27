@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     // Validate unique stroke indexes
     const indexes = body.teeSetSnapshot.holes.map((h) => h.strokeIndex);
     const expected = body.holesCount ?? body.teeSetSnapshot.holes.length;
-    if (new Set(indexes).size !== expected) {
+    if (new Set(indexes).size !== expected || indexes.some((index) => index > expected)) {
       return NextResponse.json(
         { error: `Stroke indexes must be unique 1–${expected}` },
         { status: 400 }

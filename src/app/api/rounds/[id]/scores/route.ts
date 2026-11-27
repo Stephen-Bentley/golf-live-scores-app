@@ -52,6 +52,9 @@ export async function PUT(request: Request, { params }: Params) {
       if (!scoringAsPlayer && (!isHost || groupSave)) {
         return NextResponse.json({ error: "You can only score for yourself or your fourball." }, { status: 403 });
       }
+      if (round.teamScoring === "american_scramble") {
+        return NextResponse.json({ error: "Enter a shared team score for American Scramble." }, { status: 400 });
+      }
       if (!scoringAsPlayer && !updates[0].playerId) {
         return NextResponse.json({ error: "playerId required for host corrections" }, { status: 400 });
       }

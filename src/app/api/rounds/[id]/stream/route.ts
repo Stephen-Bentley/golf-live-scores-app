@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db";
 import { getHostSession, getPlayerSession } from "@/lib/auth";
 import { acquireStream, releaseStream } from "@/lib/stream-limit";
 import type { Hole } from "@/domain/scoring";
-import { buildRoundResults } from "@/lib/round-results";
+import { buildRoundResults, scrambleFourballInclude } from "@/lib/round-results";
 
 type Params = { params: Promise<{ id: string }> };
 const STREAM_MAX_AGE_MS = 5 * 60_000;
@@ -43,6 +43,7 @@ export async function GET(request: Request, { params }: Params) {
           include: {
             players: { include: { team: true, fourball: true }, omit: { inviteCode: true } },
             scores: true,
+            fourballs: { include: scrambleFourballInclude },
           },
         });
         if (!round) {

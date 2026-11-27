@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { getHostSession, getPlayerSession } from "@/lib/auth";
 import { canScoreFor } from "@/domain/fourball";
 import type { Hole } from "@/domain/scoring";
-import { buildRoundResults } from "@/lib/round-results";
+import { buildRoundResults, scrambleFourballInclude } from "@/lib/round-results";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -21,7 +21,10 @@ export async function GET(_request: Request, { params }: Params) {
       players: { include: { team: true, fourball: true } },
       scores: true,
       teams: true,
-      fourballs: { orderBy: [{ startingHole: "asc" }, { teeTime: "asc" }, { name: "asc" }] },
+      fourballs: {
+        orderBy: [{ startingHole: "asc" }, { teeTime: "asc" }, { name: "asc" }],
+        include: scrambleFourballInclude,
+      },
     },
   });
 
@@ -44,7 +47,7 @@ export async function GET(_request: Request, { params }: Params) {
     colour: string;
   };
 
-  const { leaderboard, teams } = buildRoundResults(round, snapshot.holes);
+  const { leaderboard, teams, scramble } = buildRoundResults(round, snapshot.holes);
 
   const scoresFor = (playerId: string) => round.scores
     .filter((s) => s.playerId === playerId)
@@ -85,11 +88,12 @@ export async function GET(_request: Request, { params }: Params) {
     holes: snapshot.holes,
     leaderboard,
     teams,
+    ...(scramble ? { scramble, myScrambleId: scoringPlayer?.fourballId ?? null } : {}),
     myScores,
     scoringGroup,
     isHost,
     ...(isHost ? {
-      fourballs: round.fourballs,
+      fourballs: round.fourballs.map(({ id, name, teeTime, startingHole }) => ({ id, name, teeTime, startingHole })),
       competitionTeams: round.teams.map(({ id, name }) => ({ id, name })),
     } : {}),
     players: round.players.map((p) => ({
