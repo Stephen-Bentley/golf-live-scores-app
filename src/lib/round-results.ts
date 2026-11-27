@@ -23,6 +23,7 @@ type ResultPlayer = {
 type RoundResultsInput = {
   holesCount: number;
   scoringFormat: ScoringFormat;
+  stablefordCountback?: string | null;
   teamScoring: string;
   allianceDraw: unknown;
   players: ResultPlayer[];
@@ -42,7 +43,7 @@ export function buildRoundResults(round: RoundResultsInput, holes: Hole[]) {
     const scramble = buildScrambleStandings(round.fourballs ?? [], holes, format);
     return { leaderboard: [], teams: scramble, scramble };
   }
-  const options = { format, holesCount: round.holesCount, teamScoring };
+  const options = { format, holesCount: round.holesCount, teamScoring, stablefordCountback: round.stablefordCountback };
   const players = round.players.map((p) => {
     const group = teamScoring === "fourball_alliance" ? p.fourball : p.team;
     return {

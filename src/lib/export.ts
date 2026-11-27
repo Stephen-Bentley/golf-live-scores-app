@@ -6,6 +6,8 @@
 import ExcelJS from "exceljs";
 import {
   buildLeaderboard,
+  COUNTBACK_DESCRIPTION,
+  STABLEFORD_COUNTBACK,
   getCompetitionHandicap,
   getHandicapStrokes,
   getHolePoints,
@@ -38,6 +40,7 @@ export type ExportRound = {
   joinCode: string;
   status: string;
   scoringFormat?: ScoringFormat;
+  stablefordCountback?: string | null;
   teamScoring?: TeamScoringMode;
   standings?: TeamStanding[];
   scramble?: ScrambleStanding[];
@@ -119,7 +122,7 @@ export async function generateRoundWorkbook(
     addRoundSetup(workbook, round, holes, format);
     return Buffer.from(await workbook.xlsx.writeBuffer());
   }
-  const board = buildLeaderboard(holes, round.players, round.scores, { format, teamScoring: round.teamScoring });
+  const board = buildLeaderboard(holes, round.players, round.scores, { format, teamScoring: round.teamScoring, stablefordCountback: round.stablefordCountback });
 
   // Order players by leaderboard rank for consistent sheets
   const playersByRank = board
@@ -354,6 +357,9 @@ function addRoundSetup(workbook: ExcelJS.Workbook, round: ExportRound, holes: Ho
   }
   setup.addRow([]);
   setup.addRow(["Scoring format", format.replaceAll("_", " ")]);
+  if (round.stablefordCountback === STABLEFORD_COUNTBACK) {
+    setup.addRow(["Tie-break", COUNTBACK_DESCRIPTION]);
+  }
   if (round.teamScoring === "fourball_alliance") {
     setup.addRow(["Scoring handicap", "Playing handicap capped at 18"]);
   }

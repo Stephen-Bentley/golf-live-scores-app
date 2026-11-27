@@ -3,6 +3,14 @@
  */
 
 export type ScoringFormat = "stableford" | "stroke" | "modified_stableford";
+export const STABLEFORD_COUNTBACK = "scorecard_countback";
+export const COUNTBACK_DESCRIPTION =
+  "Compare Stableford points on holes 10–18, 13–18, 16–18, 18, 4–9, 7–9, then 9. If still tied, share the rank.";
+const COUNTBACK_SEGMENTS = [[10, 18], [13, 18], [16, 18], [18, 18], [4, 9], [7, 9], [9, 9]];
+
+export function supportsStablefordCountback(format: ScoringFormat, holesCount: number, teamScoring: string) {
+  return format === "stableford" && holesCount === 18 && teamScoring === "aggregate";
+}
 export const TEAM_SCORING_MODES = [
   "aggregate", "better_ball", "better_ball_par3_both", "fourball_alliance", "mystery_better_ball_alliance",
   "american_scramble",
@@ -190,10 +198,14 @@ export function buildLeaderboard(
   holes: Hole[],
   players: PlayerForBoard[],
   scores: StoredScore[],
-  options: { format?: ScoringFormat; holesCount?: number; teamScoring?: TeamScoringMode } = {}
+  options: { format?: ScoringFormat; holesCount?: number; teamScoring?: TeamScoringMode; stablefordCountback?: string | null } = {}
 ): LeaderboardEntry[] {
   const format = options.format ?? "stableford";
   const holesCount = options.holesCount ?? holes.length;
+
+  const useCountback = options.stablefordCountback === STABLEFORD_COUNTBACK
+    && supportsStablefordCountback(format, holesCount, options.teamScoring ?? "aggregate");
+  const countbackPoints = new Map<string, number[]>();
 
   const entries = players.map((player) => {
     const playerScores = scores
@@ -204,6 +216,16 @@ export function buildLeaderboard(
       holesCount,
       teamScoring: options.teamScoring,
     });
+    if (useCountback && summary.isComplete) {
+      const grossByHole = new Map(playerScores.map(({ holeNumber, grossScore }) => [holeNumber, grossScore]));
+      const pointsByHole = holes.map(({ number, par, strokeIndex }) => ({
+        number,
+        points: getStablefordPoints(par, getHandicapStrokes(player.playingHandicap, strokeIndex), grossByHole.get(number)),
+      }));
+      countbackPoints.set(player.id, COUNTBACK_SEGMENTS.map(([start, end]) =>
+        pointsByHole.reduce((sum, hole) => sum + (hole.number >= start && hole.number <= end ? hole.points : 0), 0)
+      ));
+    }
     const playerScoreRows = scores.filter((s) => s.playerId === player.id);
     const lastUpdate =
       playerScoreRows.reduce<string | null>((latest, s) => {
@@ -235,29 +257,27 @@ export function buildLeaderboard(
     };
   });
 
-  entries.sort((a, b) => {
+  const compareResults = (a: LeaderboardEntry, b: LeaderboardEntry) => {
     if (a.isComplete !== b.isComplete) return a.isComplete ? -1 : 1;
-    if (format === "stroke") {
-      if (a.holesCompleted === 0 && b.holesCompleted === 0) {
-        return a.displayName.localeCompare(b.displayName);
+    if (format === "stroke") return a.totalNet - b.totalNet;
+    if (a.totalPoints !== b.totalPoints) return b.totalPoints - a.totalPoints;
+
+    const aPoints = countbackPoints.get(a.playerId);
+    const bPoints = countbackPoints.get(b.playerId);
+    if (aPoints && bPoints) {
+      for (const [index, points] of aPoints.entries()) {
+        if (bPoints[index] !== points) return bPoints[index] - points;
       }
-      if (a.totalNet !== b.totalNet) return a.totalNet - b.totalNet;
-    } else if (b.totalPoints !== a.totalPoints) {
-      return b.totalPoints - a.totalPoints;
     }
-    return a.displayName.localeCompare(b.displayName);
-  });
+    return 0;
+  };
+
+  entries.sort((a, b) => compareResults(a, b) || a.displayName.localeCompare(b.displayName));
 
   let rank = 0;
-  let prevKey: string | null = null;
   entries.forEach((entry, index) => {
-    const key =
-      format === "stroke"
-        ? `${entry.isComplete}:${entry.totalNet}`
-        : `${entry.isComplete}:${entry.totalPoints}`;
-    if (prevKey === null || key !== prevKey) rank = index + 1;
+    if (index === 0 || compareResults(entries[index - 1], entry) !== 0) rank = index + 1;
     entry.rank = rank;
-    prevKey = key;
   });
 
   return entries;
