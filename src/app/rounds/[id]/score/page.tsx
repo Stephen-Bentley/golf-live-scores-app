@@ -11,7 +11,9 @@ import {
   StatusPill,
   Input,
 } from "@/components/ui";
-import { enqueueScore } from "@/lib/offline-queue";
+import { findQueuedScore, loadQueue } from "@/lib/offline-queue";
+import { useOfflineScores } from "@/lib/use-offline-scores";
+import { PendingScores } from "@/components/PendingScores";
 import { inTeeOrder } from "@/domain/fourball";
 import {
   COUNTBACK_DESCRIPTION, STABLEFORD_COUNTBACK, getAllianceMulligans, getCompetitionHandicap, getHandicapStrokes, getHolePoints, getPlayerSummary,
@@ -39,9 +41,11 @@ export default function ScoreEntryPage() {
   const [scoreMode, setScoreMode] = useState<"self" | "fourball">("self");
   const [scores, setScores] = useState<Record<number, ScoreRow>>({});
   const scoresRef = useRef(scores);
+  const refreshSequence = useRef(0);
   scoresRef.current = scores;
 
   const [handicap, setHandicap] = useState(0);
+  const [actorId, setActorId] = useState<string | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState("");
   const [courseName, setCourseName] = useState("");
@@ -52,8 +56,29 @@ export default function ScoreEntryPage() {
   const [hostJoinName, setHostJoinName] = useState("Host");
   const [hostJoinHcp, setHostJoinHcp] = useState(0);
   const [currentHole, setCurrentHole] = useState(1);
+  const currentHoleRef = useRef(currentHole);
+  currentHoleRef.current = currentHole;
   const [inputValue, setInputValue] = useState("");
   const [saving, setSaving] = useState(false);
+
+  const offline = useOfflineScores(roundId, actorId, (kind, synced) => {
+    if (kind === "scramble") {
+      void refreshScorecard().catch(() => setError("Scores reached the server. Refresh to see the latest team scorecard."));
+      return;
+    }
+
+    const saved = synced.map(({ targetId, ...score }) => ({ ...score, playerId: targetId }));
+    applySavedScores(saved);
+    const own = saved.find((score) => score.playerId === playerId && score.holeNumber === currentHole);
+    if (own && own.version >= (scoresRef.current[own.holeNumber]?.version ?? 0)) setInputValue(String(own.grossScore));
+  }, refreshScorecard);
+  const currentPending = playerId ? findQueuedScore(offline.queue, currentHole, playerId) : undefined;
+  const pendingGross = currentPending?.scores.find(({ targetId }) => targetId === playerId)?.grossScore;
+  const pendingScores = (
+    <PendingScores {...offline} nameFor={(id) => displayName && id === playerId ? displayName
+      : scoringGroup?.players.find(({ id: memberId }) => memberId === id)?.displayName
+        ?? scrambleTeams.find(({ teamId }) => teamId === id)?.teamName ?? "Score"} />
+  );
 
   const closed = status === "closed" || status === "archived";
 
@@ -74,11 +99,30 @@ export default function ScoreEntryPage() {
     setFormat(data.round.scoringFormat);
   }
 
-  async function refreshScramble() {
+  async function refreshScorecard() {
+    const sequence = ++refreshSequence.current;
     const response = await fetch(`/api/rounds/${roundId}/leaderboard`);
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Could not refresh the team scorecard.");
-    loadScramble(data);
+    if (sequence !== refreshSequence.current) return;
+    if (!response.ok) throw new Error(data.error || "Could not refresh the scorecard.");
+    if (data.round.teamScoring === "american_scramble") {
+      loadScramble(data);
+    } else if (playerId) {
+      const group = data.scoringGroup as ScoringGroup | null;
+      const own: ScoreRow[] = data.myScores ?? [];
+      const updated = group
+        ? group.players.flatMap((member) => member.scores.map((score) => ({ ...score, playerId: member.id })))
+        : own.map((score) => ({ ...score, playerId }));
+      const activeHole = currentHoleRef.current;
+      const current = own.find((score) => score.holeNumber === activeHole);
+      const previous = scoresRef.current[activeHole];
+      if (current && current.version > (previous?.version ?? 0)) {
+        const previousValue = String(previous?.grossScore ?? parForHole(activeHole));
+        setInputValue((draft) => currentHoleRef.current === activeHole && draft === previousValue
+          ? String(current.grossScore) : draft);
+      }
+      applySavedScores(updated);
+    }
   }
 
   async function loadRoundForPlayer(player: {
@@ -103,6 +147,7 @@ export default function ScoreEntryPage() {
     setTeamScoring(data.round.teamScoring);
     if (data.round.teamScoring === "american_scramble") {
       loadScramble(data);
+      setActorId(player.playerId);
       return;
     }
     setScoringGroup(data.scoringGroup ?? null);
@@ -121,8 +166,10 @@ export default function ScoreEntryPage() {
       }
     }
     setScores(map);
+    setActorId(player.playerId);
 
-    const start = holeList.find((h) => !map[h.number]) ?? holeList[0];
+    const pending = loadQueue(roundId, player.playerId);
+    const start = holeList.find((h) => !map[h.number] && !findQueuedScore(pending, h.number, player.playerId)) ?? holeList[0];
     if (start) {
       setCurrentHole(start.number);
       setInputValue(String(map[start.number]?.grossScore ?? start.par));
@@ -131,7 +178,12 @@ export default function ScoreEntryPage() {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    let retryAfterReconnect = false;
+    let loadingRound = false;
+    const boot = async () => {
+      if (loadingRound) return;
+      loadingRound = true;
+      retryAfterReconnect = false;
       setLoading(true);
       setError(null);
       try {
@@ -159,6 +211,7 @@ export default function ScoreEntryPage() {
               setStatus(lb.round?.status || "");
               if (lb.round.teamScoring === "american_scramble") {
                 setTeamScoring("american_scramble");
+                setActorId(host.userId);
                 setNeedsHostJoin(false);
                 loadScramble(lb);
                 return;
@@ -174,14 +227,20 @@ export default function ScoreEntryPage() {
         if (!cancelled) router.push(`/join?joinCode=`);
       } catch (err) {
         if (!cancelled) {
+          retryAfterReconnect = true;
           setError(err instanceof Error ? err.message : "Failed to load");
         }
       } finally {
+        loadingRound = false;
         if (!cancelled) setLoading(false);
       }
-    })();
+    };
+    const reconnect = () => { if (retryAfterReconnect) void boot(); };
+    void boot();
+    window.addEventListener("online", reconnect);
     return () => {
       cancelled = true;
+      window.removeEventListener("online", reconnect);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roundId, router]);
@@ -222,7 +281,9 @@ export default function ScoreEntryPage() {
     setScoringGroup((previous) => previous && ({
       ...previous,
       players: previous.players.map((member) => {
-        const updates = saved.filter((score) => score.playerId === member.id);
+        const updates = saved.filter((score) => score.playerId === member.id && !member.scores.some((previous) =>
+          previous.holeNumber === score.holeNumber && previous.version > score.version
+        ));
         if (!updates.length) return member;
         return {
           ...member,
@@ -236,7 +297,9 @@ export default function ScoreEntryPage() {
     if (ownUpdates.length) {
       setScores((previous) => {
         const next = { ...previous };
-        for (const score of ownUpdates) next[score.holeNumber] = score;
+        for (const score of ownUpdates) {
+          if (score.version >= (next[score.holeNumber]?.version ?? 0)) next[score.holeNumber] = score;
+        }
         scoresRef.current = next;
         return next;
       });
@@ -244,6 +307,7 @@ export default function ScoreEntryPage() {
   }
 
   function goToHole(n: number) {
+    currentHoleRef.current = n;
     setCurrentHole(n);
     const existing = scoresRef.current[n];
     setInputValue(
@@ -253,170 +317,29 @@ export default function ScoreEntryPage() {
     setError(null);
   }
 
-  function messageForSaveFailure(
-    httpStatus: number,
-    data: { error?: string; serverScore?: number; serverVersion?: number }
-  ): string {
-    if (httpStatus === 401) {
-      return "Your session expired. Join the round again, then retry.";
-    }
-    if (httpStatus === 403) {
-      return data.error || "You cannot change scores on this round.";
-    }
-    if (httpStatus === 404) {
-      return "Round or player was not found.";
-    }
-    if (httpStatus === 409) {
-      return "This hole was updated elsewhere. Review the latest score and save again.";
-    }
-    if (httpStatus === 429) {
-      return "Too many saves. Wait a moment, then try again.";
-    }
-    if (httpStatus >= 500) {
-      return "Server error — score was not saved. Try again.";
-    }
-    return data.error || `Could not save score (error ${httpStatus}).`;
-  }
-
-  async function saveScore(opts?: {
-    holeNumber?: number;
-    grossScore?: number;
-  }): Promise<boolean> {
-    if (!playerId) {
-      setError("You are not registered as a player on this round yet.");
-      return false;
-    }
-    if (closed) {
-      setError("This round is closed. Scores can no longer be changed.");
-      return false;
-    }
-
+  async function saveScore(opts?: { holeNumber?: number; grossScore?: number }): Promise<boolean> {
+    if (!playerId || closed) return false;
     const holeNumber = opts?.holeNumber ?? currentHole;
-    const raw =
-      opts?.grossScore !== undefined ? opts.grossScore : Number(inputValue);
-
-    if (
-      (opts?.grossScore === undefined && inputValue === "") ||
-      !Number.isInteger(raw) ||
-      raw < 1 ||
-      raw > 20
-    ) {
+    const raw = opts?.grossScore ?? Number(inputValue);
+    if (!Number.isInteger(raw) || raw < 1 || raw > 20) {
       setError("Enter a whole number score from 1 to 20 before saving.");
       return false;
     }
 
-    if (typeof navigator !== "undefined" && navigator.onLine === false) {
-      setError("You appear offline. Reconnect and save again.");
-      return false;
-    }
-
     setSaving(true);
+    setMessage(null);
     setError(null);
-
     try {
-      const existing = scoresRef.current[holeNumber];
-      let res: Response;
-      try {
-        res = await fetch(`/api/rounds/${roundId}/scores`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            holeNumber,
-            grossScore: raw,
-            clientVersion: existing?.version ?? 0,
-            playerId,
-          }),
-        });
-      } catch {
-        if (playerId) {
-          enqueueScore(roundId, playerId, {
-            holeNumber,
-            grossScore: raw,
-            clientVersion: existing?.version,
-          });
-          setScores((prev) => {
-            const next = {
-              ...prev,
-              [holeNumber]: {
-                holeNumber,
-                grossScore: raw,
-                version: existing?.version ?? 0,
-              },
-            };
-            scoresRef.current = next;
-            return next;
-          });
-          setMessage(
-            `Saved offline (queued). Will sync when you are back online.`
-          );
-          setError(null);
-          return true;
-        }
-        setError("Network error — score was not saved. Check your connection.");
-        return false;
+      const result = await offline.submit({
+        kind: "player", holeNumber,
+        scores: [{ targetId: playerId, grossScore: raw, clientVersion: scoresRef.current[holeNumber]?.version ?? 0 }],
+      });
+      if (result.status === "saved") {
+        const points = result.scores[0].points;
+        setMessage(format === "stroke" ? `Hole ${holeNumber} saved` : `Hole ${holeNumber} saved · ${points} points`);
       }
-
-      let data: {
-        error?: string;
-        serverScore?: number;
-        serverVersion?: number;
-        score?: { grossScore: number; version: number; points: number };
-      } = {};
-      try {
-        data = await res.json();
-      } catch {
-        if (!res.ok) {
-          setError(`Could not save score (HTTP ${res.status}).`);
-          return false;
-        }
-      }
-
-      if (res.status === 409) {
-        if (
-          typeof data.serverScore === "number" &&
-          typeof data.serverVersion === "number"
-        ) {
-          applySavedScores([{
-            playerId,
-            holeNumber,
-            grossScore: data.serverScore,
-            version: data.serverVersion,
-          }]);
-          if (holeNumber === currentHole) {
-            setInputValue(String(data.serverScore));
-          }
-        }
-        setError(messageForSaveFailure(409, data));
-        setMessage(null);
-        return false;
-      }
-
-      if (!res.ok || !data.score) {
-        setError(messageForSaveFailure(res.status, data));
-        setMessage(null);
-        return false;
-      }
-
-      const nextRow = {
-        playerId,
-        holeNumber,
-        grossScore: data.score.grossScore,
-        version: data.score.version,
-      };
-      applySavedScores([nextRow]);
-      setMessage(format === "stroke"
-        ? `Hole ${holeNumber} saved`
-        : `Hole ${holeNumber} saved · ${data.score.points} points`);
-      setError(null);
-      return true;
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? `Save failed: ${err.message}`
-          : "Save failed unexpectedly."
-      );
-      setMessage(null);
-      return false;
+      if (result.status === "failed") setError(result.error);
+      return result.status === "saved" || result.status === "pending";
     } finally {
       setSaving(false);
     }
@@ -424,7 +347,7 @@ export default function ScoreEntryPage() {
 
   async function goNext() {
     if (nextHole === undefined) return;
-    if (closed) {
+    if (closed || currentPending) {
       goToHole(nextHole);
       return;
     }
@@ -475,7 +398,8 @@ export default function ScoreEntryPage() {
   const scoringHandicap = getCompetitionHandicap(handicap, teamScoring);
   const mulligans = teamScoring === "fourball_alliance" ? getAllianceMulligans(handicap) : 0;
   const strokes = getHandicapStrokes(scoringHandicap, hole.strokeIndex, activeHoles.length);
-  const grossNum = inputValue === "" ? null : Number(inputValue);
+  const visibleInput = pendingGross === undefined ? inputValue : String(pendingGross);
+  const grossNum = visibleInput === "" ? null : Number(visibleInput);
   const previewPoints =
     grossNum !== null &&
     Number.isInteger(grossNum) &&
@@ -514,8 +438,9 @@ export default function ScoreEntryPage() {
             </select>
           </label>
         )}
+        {pendingScores}
         {team ? (
-          <ScrambleScoring key={team.teamId} roundId={roundId} team={team} holes={holes} format={format} closed={closed} onRefresh={refreshScramble} />
+          <ScrambleScoring key={team.teamId} team={team} holes={holes} format={format} closed={closed} pending={offline.queue} onSubmit={offline.submit} />
         ) : (
           <Alert tone="warning" className="mt-4">
             {isHost ? "Create a fourball and assign its players from the leaderboard." : "Ask the host to assign you to a scramble team."}
@@ -628,13 +553,13 @@ export default function ScoreEntryPage() {
         </div>
       )}
 
+      {pendingScores}
       {scoreMode === "fourball" && scoringGroup && playerId && (
         <>
           <p className="mt-3 text-sm font-medium text-stone-600">
             {scoringGroup.name}{scoringGroup.teeTime && ` · ${scoringGroup.teeTime}`}
           </p>
           <FourballScoring
-            roundId={roundId}
             playerId={playerId}
             group={scoringGroup}
             holes={activeHoles}
@@ -643,7 +568,8 @@ export default function ScoreEntryPage() {
             closed={closed}
             saving={saving}
             onSavingChange={setSaving}
-            onScoresSaved={applySavedScores}
+            pending={offline.queue}
+            onSubmit={offline.submit}
           />
         </>
       )}
@@ -654,7 +580,7 @@ export default function ScoreEntryPage() {
             Hole {hole.number}
           </h2>
           <StatusPill>
-            {scores[currentHole] ? "Saved" : "Ready to score"}
+            {currentPending ? "Pending sync" : scores[currentHole] ? "Saved" : "Ready to score"}
           </StatusPill>
         </div>
 
@@ -685,7 +611,7 @@ export default function ScoreEntryPage() {
                   inputValue === "" ? hole.par : Number(inputValue) || hole.par;
                 setInputValue(String(Math.max(1, base - 1)));
               }}
-              disabled={closed || saving}
+              disabled={closed || saving || Boolean(currentPending)}
               aria-label="Decrease score"
             >
               −
@@ -695,9 +621,9 @@ export default function ScoreEntryPage() {
               inputMode="numeric"
               min={1}
               max={20}
-              value={inputValue}
+              value={visibleInput}
               onChange={(e) => setInputValue(e.target.value)}
-              disabled={closed || saving}
+              disabled={closed || saving || Boolean(currentPending)}
               className="h-16 w-24 rounded-xl border-2 border-stone-300 text-center text-3xl font-bold text-emerald-950 focus:border-emerald-700 focus:outline-none"
               placeholder={String(hole.par)}
               aria-label="Gross score"
@@ -711,7 +637,7 @@ export default function ScoreEntryPage() {
                   inputValue === "" ? hole.par : Number(inputValue) || hole.par;
                 setInputValue(String(Math.min(20, base + 1)));
               }}
-              disabled={closed || saving}
+              disabled={closed || saving || Boolean(currentPending)}
               aria-label="Increase score"
             >
               +
@@ -764,7 +690,7 @@ export default function ScoreEntryPage() {
           </Button>
           <Button
             onClick={() => void saveScore()}
-            disabled={saving || closed}
+            disabled={saving || closed || Boolean(currentPending)}
           >
             {saving ? "Saving…" : "Save"}
           </Button>
@@ -814,6 +740,7 @@ export default function ScoreEntryPage() {
         <h3 className="font-semibold text-emerald-950">Hole progress</h3>
         <div className="mt-3 flex flex-wrap gap-2">
           {activeHoles.map((h) => {
+            const pending = playerId ? findQueuedScore(offline.queue, h.number, playerId) : undefined;
             const scored = Boolean(scores[h.number]);
             const current = h.number === currentHole;
             return (
@@ -827,13 +754,13 @@ export default function ScoreEntryPage() {
                     ? "border-emerald-700 outline outline-2 outline-emerald-700"
                     : "border-stone-200"
                 } ${
-                  scored
+                  pending ? "bg-amber-100 text-amber-950" : scored
                     ? "bg-emerald-100 text-emerald-900"
                     : "bg-white text-stone-700"
                 }`}
               >
                 {h.number}
-                {scored ? ` · ${scores[h.number].grossScore}` : ""}
+                {pending ? " · Pending" : scored ? ` · ${scores[h.number].grossScore}` : ""}
               </button>
             );
           })}

@@ -7,6 +7,7 @@ import {
 } from "@/domain/scoring";
 import { Alert, Button, Card, StatusPill } from "@/components/ui";
 import { SippyCupRules } from "./SippyCupRules";
+import { findQueuedScore, type QueuedScore, type ScoreWrite, type SyncResult } from "@/lib/offline-queue";
 import type { Fourball } from "./FourballManager";
 
 export type ScoreRow = { holeNumber: number; grossScore: number; version: number };
@@ -16,7 +17,6 @@ export type ScoringGroup = Fourball & {
 };
 
 type Props = {
-  roundId: string;
   playerId: string;
   group: ScoringGroup;
   holes: Hole[];
@@ -25,11 +25,12 @@ type Props = {
   closed: boolean;
   saving: boolean;
   onSavingChange: (saving: boolean) => void;
-  onScoresSaved: (scores: PlayerScore[]) => void;
+  pending: QueuedScore[];
+  onSubmit: (write: ScoreWrite) => Promise<SyncResult>;
 };
 
 export function FourballScoring({
-  roundId, playerId, group, holes, format, teamScoring, closed, saving, onSavingChange, onScoresSaved,
+  playerId, group, holes, format, teamScoring, closed, saving, onSavingChange, pending, onSubmit,
 }: Props) {
   const [currentIndex, setCurrentIndex] = useState(() => {
     const firstMissing = holes.findIndex((hole) => group.players.some((player) =>
@@ -43,8 +44,9 @@ export function FourballScoring({
   const hole = holes[currentIndex];
   const rows = group.players.map((player) => {
     const saved = player.scores.find((score) => score.holeNumber === hole.number);
-    const value = drafts[player.id] ?? (saved ? String(saved.grossScore) : "");
-    return { ...player, saved, value };
+    const queued = findQueuedScore(pending, hole.number, player.id)?.scores.find(({ targetId }) => targetId === player.id);
+    const value = queued ? String(queued.grossScore) : drafts[player.id] ?? (saved ? String(saved.grossScore) : "");
+    return { ...player, queued, saved, value };
   }).sort((a, b) => Number(b.id === playerId) - Number(a.id === playerId));
 
   function goTo(index: number) {
@@ -57,9 +59,9 @@ export function FourballScoring({
   async function save(advance: boolean) {
     setError(null);
     setMessage(null);
-    const scores = rows.flatMap(({ id, value, saved }) =>
-      value !== "" && Number(value) !== saved?.grossScore
-        ? [{ playerId: id, grossScore: Number(value), clientVersion: saved?.version ?? 0 }]
+    const scores = rows.flatMap(({ id, value, saved, queued }) =>
+      !queued && value !== "" && Number(value) !== saved?.grossScore
+        ? [{ targetId: id, grossScore: Number(value), clientVersion: saved?.version ?? 0 }]
         : []
     );
     if (scores.some(({ grossScore }) => !Number.isInteger(grossScore) || grossScore < 1 || grossScore > 20)) {
@@ -72,33 +74,20 @@ export function FourballScoring({
     }
     onSavingChange(true);
     try {
-      const response = await fetch(`/api/rounds/${roundId}/scores`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ holeNumber: hole.number, scores }),
-      });
-      const data = await response.json();
-      if (response.status === 409 && data.error === "conflict") {
-        const player = group.players.find((member) => member.id === data.playerId);
-        if (typeof data.serverScore === "number") {
-          onScoresSaved([{
-            playerId: data.playerId, holeNumber: hole.number,
-            grossScore: data.serverScore, version: data.serverVersion,
-          }]);
-        }
-        setDrafts((previous) => ({
-          ...previous, [data.playerId]: data.serverScore == null ? "" : String(data.serverScore),
-        }));
-        setError(`${player?.displayName ?? "A player"}'s score changed on another device. Review the latest score and save again.`);
+      const result = await onSubmit({ kind: "fourball", holeNumber: hole.number, scores });
+      if (result.status === "failed") {
+        setError(result.error);
         return;
       }
-      if (!response.ok) throw new Error(data.error || "Could not save the fourball scores.");
-      onScoresSaved(data.scores);
+      if (result.status === "conflict") {
+        setDrafts({});
+        return;
+      }
       setDrafts({});
       if (advance) {
         goTo(currentIndex + 1);
       } else {
-        setMessage(`Hole ${hole.number} saved.`);
+        if (result.status === "saved") setMessage(`Hole ${hole.number} saved.`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the fourball scores.");
@@ -107,8 +96,8 @@ export function FourballScoring({
     }
   }
 
-  const savedCount = rows.filter((row) => row.saved).length;
-  const draftsChanged = rows.some(({ value, saved }) => value !== "" && Number(value) !== saved?.grossScore);
+  const savedCount = rows.filter((row) => row.saved && !row.queued).length;
+  const draftsChanged = rows.some(({ value, saved, queued }) => !queued && value !== "" && Number(value) !== saved?.grossScore);
 
   return (
     <Card className="mt-4">
@@ -148,7 +137,7 @@ export function FourballScoring({
                   max={20}
                   aria-label={`Gross score for ${row.displayName}`}
                   value={row.value}
-                  disabled={saving || closed}
+                  disabled={saving || closed || Boolean(row.queued)}
                   onChange={(event) => setDrafts((previous) => ({ ...previous, [row.id]: event.target.value }))}
                   className="mt-1 block h-11 w-20 rounded-lg border border-stone-300 bg-white text-center text-xl font-semibold text-emerald-950"
                 />

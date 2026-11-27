@@ -4,18 +4,19 @@ import { useState, type FormEvent } from "react";
 import { inTeeOrder } from "@/domain/fourball";
 import type { Hole, ScoringFormat } from "@/domain/scoring";
 import type { ScrambleStanding } from "@/domain/scramble";
+import { findQueuedScore, type QueuedScore, type ScoreWrite, type SyncResult } from "@/lib/offline-queue";
 import { Alert, Button, Card, Input } from "@/components/ui";
 
 type Props = {
-  roundId: string;
   team: ScrambleStanding;
   holes: Hole[];
   format: ScoringFormat;
   closed: boolean;
-  onRefresh: () => Promise<void>;
+  pending: QueuedScore[];
+  onSubmit: (write: ScoreWrite) => Promise<SyncResult>;
 };
 
-export function ScrambleScoring({ roundId, team, holes, format, closed, onRefresh }: Props) {
+export function ScrambleScoring({ team, holes, format, closed, pending, onSubmit }: Props) {
   const ordered = inTeeOrder(holes, team.startingHole);
   const scores = new Map(team.holeScores.map((score) => [score.holeNumber, score]));
   const [holeNumber, setHoleNumber] = useState(() =>
@@ -26,36 +27,29 @@ export function ScrambleScoring({ roundId, team, holes, format, closed, onRefres
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const saved = scores.get(holeNumber);
+  const queued = findQueuedScore(pending, holeNumber, team.teamId)?.scores[0];
   const disabled = closed || team.playingHandicap === null;
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy || disabled || !draft) return;
+    if (busy || disabled || !draft || queued) return;
     setBusy(true);
     setError("");
     setMessage("");
     try {
-      const response = await fetch(`/api/rounds/${roundId}/scramble-scores`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fourballId: team.teamId,
-          holeNumber,
-          grossScore: Number(draft),
-          clientVersion: saved?.version ?? 0,
-        }),
+      const result = await onSubmit({
+        kind: "scramble", holeNumber,
+        scores: [{ targetId: team.teamId, grossScore: Number(draft), clientVersion: saved?.version ?? 0 }],
       });
-      const result = await response.json();
-      if (response.status === 409) {
-        await onRefresh();
+      if (result.status === "failed") throw new Error(result.error);
+      if (result.status === "conflict") {
         setDraft(null);
+        return;
       }
-      if (!response.ok) throw new Error(result.error || "Could not save the team score.");
-      setMessage(`Hole ${holeNumber} saved.`);
-      await onRefresh();
+      if (result.status === "saved") setMessage(`Hole ${holeNumber} saved.`);
       setDraft(null);
       if (!saved) {
-        const next = ordered.find((hole) => hole.number !== holeNumber && !scores.has(hole.number));
+        const next = ordered.find((hole) => hole.number !== holeNumber && !scores.has(hole.number) && !findQueuedScore(pending, hole.number, team.teamId));
         if (next) setHoleNumber(next.number);
       }
     } catch (err) {
@@ -100,11 +94,11 @@ export function ScrambleScoring({ roundId, team, holes, format, closed, onRefres
             min={1}
             max={20}
             required
-            disabled={busy}
-            value={draft ?? saved?.grossScore ?? ""}
+            disabled={busy || Boolean(queued)}
+            value={queued?.grossScore ?? draft ?? saved?.grossScore ?? ""}
             onChange={(event) => setDraft(event.target.value)}
           />
-          <Button type="submit" disabled={busy || !draft}>{busy ? "Saving…" : "Save team score"}</Button>
+          <Button type="submit" disabled={busy || !draft || Boolean(queued)}>{busy ? "Saving…" : "Save team score"}</Button>
         </form>
       )}
       {message && <Alert tone="success">{message}</Alert>}
