@@ -38,7 +38,7 @@ services:
     environment:
       # Inside Docker the DB host is the service name "db", not localhost
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/fairway_live?schema=public
-      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:?Set NEXT_PUBLIC_APP_URL to the public HTTPS URL}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:?Set NEXT_PUBLIC_APP_URL to the app URL}
       # Explicitly pass through the same key from .env (Compose substitution)
       GOLF_COURSE_API_KEY: ${GOLF_COURSE_API_KEY:-}
       # Guest hosting is enabled by default for this app. Set this to false on
