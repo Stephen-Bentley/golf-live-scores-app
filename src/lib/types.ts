@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { TEAM_SCORING_MODES } from "@/domain/scoring";
+import { STABLEFORD_COUNTBACK, supportsStablefordCountback, TEAM_SCORING_MODES } from "@/domain/scoring";
 
 export const playingHandicapSchema = z.number().int().min(0).max(54);
 export const grossScoreSchema = z.number().int().min(1).max(20);
@@ -34,7 +34,12 @@ export const createRoundSchema = z.object({
   courseRating: z.number().optional().nullable(),
   slopeRating: z.number().int().optional().nullable(),
   teamScoring: z.enum(TEAM_SCORING_MODES).optional().default("aggregate"),
-});
+  stablefordCountback: z.literal(STABLEFORD_COUNTBACK).optional(),
+}).refine(
+  ({ stablefordCountback, scoringFormat, holesCount, teamScoring }) =>
+    !stablefordCountback || supportsStablefordCountback(scoringFormat, holesCount, teamScoring),
+  { message: "Countback is available for individual 18-hole Stableford", path: ["stablefordCountback"] }
+);
 
 export const joinRoundSchema = z.object({
   joinCode: z.string().min(4).max(12),

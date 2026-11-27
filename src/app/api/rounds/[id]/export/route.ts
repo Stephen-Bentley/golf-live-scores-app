@@ -74,6 +74,7 @@ export async function POST(_request: Request, { params }: Params) {
     joinCode: round.joinCode,
     status: round.status,
     scoringFormat: round.scoringFormat,
+    stablefordCountback: round.stablefordCountback,
     teamScoring: round.teamScoring as TeamScoringMode,
     standings: teams,
     scramble,

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { TeamScoringMode } from "@/domain/scoring";
+import { COUNTBACK_DESCRIPTION, STABLEFORD_COUNTBACK, supportsStablefordCountback, type TeamScoringMode } from "@/domain/scoring";
 import {
   PageShell,
   Topbar,
@@ -126,6 +126,7 @@ export default function NewRoundPage() {
   const [scoringFormat, setScoringFormat] = useState<
     "stableford" | "stroke" | "modified_stableford"
   >("stableford");
+  const [useCountback, setUseCountback] = useState(false);
   const [holesCount, setHolesCount] = useState<9 | 18>(18);
   const [teamScoring, setTeamScoring] = useState<TeamScoringMode>(
     "aggregate"
@@ -270,6 +271,8 @@ export default function NewRoundPage() {
           scoringFormat,
           holesCount,
           teamScoring,
+          stablefordCountback: useCountback && supportsStablefordCountback(scoringFormat, holesCount, teamScoring)
+            ? STABLEFORD_COUNTBACK : undefined,
         }),
       });
       const data = await res.json();
@@ -493,6 +496,15 @@ export default function NewRoundPage() {
                 </option>
               </select>
             </label>
+            {supportsStablefordCountback(scoringFormat, holesCount, teamScoring) && (
+              <div className="space-y-1 sm:col-span-2">
+                <label className="block text-sm font-medium text-stone-700">
+                  <input className="mr-2" type="checkbox" checked={useCountback} onChange={(event) => setUseCountback(event.target.checked)} />
+                  Use scorecard countback
+                </label>
+                <p className="text-sm text-stone-600">{COUNTBACK_DESCRIPTION}</p>
+              </div>
+            )}
             {teamScoring === "american_scramble" && (
               <p className="text-sm text-stone-600 sm:col-span-2">
                 Assign two to four players to each fourball. Everyone plays from the best shot until the ball is holed.

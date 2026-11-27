@@ -14,7 +14,7 @@ import {
 import { enqueueScore } from "@/lib/offline-queue";
 import { inTeeOrder } from "@/domain/fourball";
 import {
-  getAllianceMulligans, getCompetitionHandicap, getHandicapStrokes, getHolePoints, getPlayerSummary,
+  COUNTBACK_DESCRIPTION, STABLEFORD_COUNTBACK, getAllianceMulligans, getCompetitionHandicap, getHandicapStrokes, getHolePoints, getPlayerSummary,
   type Hole, type ScoringFormat, type TeamScoringMode,
 } from "@/domain/scoring";
 import { FourballScoring, type PlayerScore, type ScoreRow, type ScoringGroup } from "@/components/FourballScoring";
@@ -45,6 +45,7 @@ export default function ScoreEntryPage() {
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState("");
   const [courseName, setCourseName] = useState("");
+  const [useCountback, setUseCountback] = useState(false);
   const [status, setStatus] = useState("");
   const [isHost, setIsHost] = useState(false);
   const [needsHostJoin, setNeedsHostJoin] = useState(false);
@@ -94,6 +95,7 @@ export default function ScoreEntryPage() {
     if (!res.ok) throw new Error(data.error || "Failed to load round");
 
     setCourseName(data.round.courseName);
+    setUseCountback(data.round.stablefordCountback === STABLEFORD_COUNTBACK);
     setStatus(data.round.status);
     setIsHost(Boolean(data.isHost));
 
@@ -589,6 +591,7 @@ export default function ScoreEntryPage() {
             {displayName} · Hcp {scoringHandicap}
             {mulligans > 0 && ` · ${mulligans} mulligan${mulligans === 1 ? "" : "s"}`}
           </p>
+          {useCountback && <p className="mt-2 text-sm text-stone-600">{COUNTBACK_DESCRIPTION}</p>}
         </div>
         <StatusPill tone={closed ? "muted" : "success"}>
           {status || "active"}

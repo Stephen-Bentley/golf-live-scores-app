@@ -69,6 +69,7 @@ export async function POST(request: Request) {
         status: "setup",
         scoringFormat: body.scoringFormat ?? "stableford",
         holesCount,
+        stablefordCountback: body.stablefordCountback,
         courseRating: body.courseRating ?? body.teeSetSnapshot.rating ?? null,
         slopeRating: body.slopeRating ?? body.teeSetSnapshot.slope ?? null,
         teamScoring: body.teamScoring ?? "aggregate",

@@ -30,6 +30,7 @@ export async function POST(_request: Request, { params }: Params) {
       scoringFormat: source.scoringFormat,
       teamScoring: source.teamScoring,
       holesCount: source.holesCount,
+      stablefordCountback: source.stablefordCountback,
       courseRating: source.courseRating,
       slopeRating: source.slopeRating,
       templateFromId: source.id,

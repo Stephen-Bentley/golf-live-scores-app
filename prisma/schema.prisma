@@ -99,6 +99,7 @@ model Round {
   status         RoundStatus   @default(setup)
   scoringFormat  ScoringFormat @default(stableford)
   holesCount     Int           @default(18)
+  stablefordCountback String?
   teamScoring    String        @default("aggregate")
   allianceDraw   Json?
   courseRating   Float?

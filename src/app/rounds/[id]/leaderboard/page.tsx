@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { FourballManager, type Fourball, type RosterPlayer } from "@/components/FourballManager";
-import { getCompetitionHandicap, type TeamScoringMode } from "@/domain/scoring";
+import { COUNTBACK_DESCRIPTION, STABLEFORD_COUNTBACK, getCompetitionHandicap, type TeamScoringMode } from "@/domain/scoring";
 import {
   PageShell,
   Topbar,
@@ -98,6 +98,7 @@ export default function LeaderboardPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [courseName, setCourseName] = useState("");
   const [teeName, setTeeName] = useState("");
+  const [useCountback, setUseCountback] = useState(false);
   const [status, setStatus] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const [joinCodeActive, setJoinCodeActive] = useState(true);
@@ -143,6 +144,7 @@ export default function LeaderboardPage() {
       setCourseName(data.round.courseName);
       setTeeName(data.round.teeName);
       setStatus(data.round.status);
+      setUseCountback(data.round.stablefordCountback === STABLEFORD_COUNTBACK);
       setJoinCode(data.round.joinCode);
       setJoinCodeActive(data.round.joinCodeActive);
       setBoard(data.leaderboard || []);
@@ -389,6 +391,8 @@ export default function LeaderboardPage() {
         </StatusPill>
       </div>
 
+
+      {useCountback && <p className="mt-3 text-sm text-stone-600">{COUNTBACK_DESCRIPTION}</p>}
 
       <Card className="mt-6">
         <h2 className="font-semibold text-emerald-950">Invite players</h2>

@@ -80,6 +80,7 @@ export async function GET(_request: Request, { params }: Params) {
       joinCodeActive: round.joinCodeActive,
       scoringFormat: round.scoringFormat,
       holesCount: round.holesCount,
+      stablefordCountback: round.stablefordCountback,
       teamScoring: round.teamScoring,
       alliancesDrawn: Boolean(round.allianceDraw),
       courseRating: round.courseRating,
