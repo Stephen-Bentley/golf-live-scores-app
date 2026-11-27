@@ -36,7 +36,7 @@ function hashSessionToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
-export function useSecureSessionCookie(
+export function shouldSetSecureSessionCookie(
   requestHost: string | null,
   forwardedProto: string | null,
   env: NodeJS.ProcessEnv = process.env,
@@ -66,7 +66,7 @@ async function sessionCookieOptions() {
   return {
     httpOnly: true,
     sameSite: "lax" as const,
-    secure: useSecureSessionCookie(request.get("host"), request.get("x-forwarded-proto")),
+    secure: shouldSetSecureSessionCookie(request.get("host"), request.get("x-forwarded-proto")),
     path: "/",
     maxAge: SESSION_DAYS * 24 * 60 * 60,
   };

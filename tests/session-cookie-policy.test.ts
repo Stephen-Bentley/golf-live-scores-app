@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { useSecureSessionCookie } from "@/lib/auth";
+import { shouldSetSecureSessionCookie } from "@/lib/auth";
 
 function secure(url: string | undefined, host: string | null, proto = "http") {
-  return useSecureSessionCookie(host, proto, { NODE_ENV: "production", NEXT_PUBLIC_APP_URL: url });
+  return shouldSetSecureSessionCookie(host, proto, { NODE_ENV: "production", NEXT_PUBLIC_APP_URL: url });
 }
 
 describe("session cookie transport", () => {
@@ -28,6 +28,6 @@ describe("session cookie transport", () => {
   it("keeps localhost HTTP available for local Docker and development", () => {
     expect(secure("http://localhost:3000", "localhost:3000")).toBe(false);
     expect(secure("http://[::1]:3000", "[::1]:3000")).toBe(false);
-    expect(useSecureSessionCookie(null, null, { NODE_ENV: "development" })).toBe(false);
+    expect(shouldSetSecureSessionCookie(null, null, { NODE_ENV: "development" })).toBe(false);
   });
 });
