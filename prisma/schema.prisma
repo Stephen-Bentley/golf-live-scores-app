@@ -171,11 +171,19 @@ model Player {
   fourball        Fourball?  @relation(fields: [fourballId], references: [id])
   scores          ScoreEntry[]
   holeNotes       HoleNote[]
+  recoveryLink    PlayerRecoveryLink?
 
   @@unique([roundId, displayName])
   @@index([roundId])
   @@index([teamId])
   @@index([fourballId])
+}
+
+model PlayerRecoveryLink {
+  playerId  String   @id
+  tokenHash String   @unique
+  expiresAt DateTime
+  player    Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
 }
 
 model ScoreEntry {

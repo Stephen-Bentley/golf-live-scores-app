@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { FOURBALL_CAPACITY } from "@/domain/fourball";
+import { ScorecardRecovery } from "@/components/ScorecardRecovery";
 import { Alert, Button, Input } from "@/components/ui";
 
 export type Fourball = {
@@ -119,6 +120,7 @@ export function FourballManager({ roundId, fourballs, players, teams, holes, loc
               {copied === player.id ? "Player link copied" : "Copy private player link"}
             </Button>
           )}
+          <ScorecardRecovery roundId={roundId} playerId={player.id} playerName={player.displayName} locked={locked} />
           {visibleLink?.playerId === player.id && canInvite && !locked && (
             <Input
               id={`player-link-${player.id}`}
